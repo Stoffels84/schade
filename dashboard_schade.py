@@ -68,17 +68,16 @@ with tab2:
     st.bar_chart(chart_data)
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Teamcoach"}))
 
-
 # --- TAB 3: Voertuig ---
 with tab3:
     st.subheader("Aantal schadegevallen per type voertuig")
     chart_data = df_filtered["Bus/ Tram"].value_counts()
     st.bar_chart(chart_data)
-    st.dataframe(chart_data.rename("Aantal").reset_index(names="Voertuig"))
+    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Voertuig"}))
 
 # --- TAB 4: Locatie ---
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
     chart_data = df_filtered["Locatie"].value_counts()
     st.bar_chart(chart_data)
-    st.dataframe(chart_data.rename("Aantal").reset_index(names="Locatie"))
+    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Locatie"}))
