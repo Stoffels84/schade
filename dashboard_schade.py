@@ -59,7 +59,7 @@ with tab1:
     st.pyplot(fig)
 
     # Tabel
-    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"})
+    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"}))
 
 # --- TAB 2: Teamcoach ---
 with tab2:
