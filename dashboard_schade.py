@@ -66,7 +66,8 @@ with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
     chart_data = df_filtered["teamcoach"].value_counts()
     st.bar_chart(chart_data)
-    st.dataframe(chart_data.rename("Aantal").reset_index(names="Teamcoach"))
+    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Teamcoach"}))
+
 
 # --- TAB 3: Voertuig ---
 with tab3:
