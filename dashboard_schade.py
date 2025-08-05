@@ -55,10 +55,12 @@ with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
     top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
+    # Data voorbereiden
     chart_data = df_filtered["volledige naam"].value_counts()
     if top_n_option != "Allemaal":
         chart_data = chart_data.head(int(top_n_option))
 
+    # Plot horizontale bar chart
     fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
     chart_data.sort_values().plot(kind="barh", ax=ax)
     ax.set_xlabel("Aantal schadegevallen")
@@ -66,7 +68,35 @@ with tab1:
     ax.set_title(f"Top {top_n_option} schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
     st.pyplot(fig)
 
-    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"}))
+    # 📋 Tabel opbouwen met meerdere links per chauffeur
+    tabel = chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"})
+
+    # Groepeer links per chauffeur
+    grouped_links = (
+        df_filtered[["volledige naam", "Link"]]
+        .dropna()
+        .groupby("volledige naam")["Link"]
+        .apply(list)
+        .reset_index()
+        .rename(columns={"volledige naam": "Chauffeur"})
+    )
+
+    # Maak klikbare HTML-lijst per chauffeur
+    def make_clickable_list(link_list):
+        if not link_list:
+            return ""
+        return "<br>".join(
+            [f'<a href="{link}" target="_blank">🔗 Link {i+1}</a>' for i, link in enumerate(link_list)]
+        )
+
+    grouped_links["Links"] = grouped_links["Link"].apply(make_clickable_list)
+    grouped_links = grouped_links.drop(columns="Link")
+
+    # Merge met tabel
+    tabel = pd.merge(tabel, grouped_links, on="Chauffeur", how="left")
+
+    # HTML-tabel weergeven met klikbare links
+    st.markdown(tabel.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 # --- TAB 2: Teamcoach ---
 with tab2:
