@@ -68,20 +68,20 @@ with tab1:
     ax.set_title(f"Top {top_n_option} schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
     st.pyplot(fig)
 
-    # 📋 Tabel opbouwen met meerdere links per chauffeur
-    tabel = chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"})
+    # 📋 Tabel opbouwen
+    tabel = chart_data.reset_index(name="Aantal")
+    tabel = tabel.rename(columns={"index": "volledige naam"})
 
-    # Groepeer links per chauffeur
+    # Groepeer meerdere links per chauffeur
     grouped_links = (
         df_filtered[["volledige naam", "Link"]]
         .dropna()
         .groupby("volledige naam")["Link"]
         .apply(list)
         .reset_index()
-        .rename(columns={"volledige naam": "Chauffeur"})
     )
 
-    # Maak klikbare HTML-lijst per chauffeur
+    # Maak klikbare HTML-links
     def make_clickable_list(link_list):
         if not link_list:
             return ""
@@ -92,10 +92,13 @@ with tab1:
     grouped_links["Links"] = grouped_links["Link"].apply(make_clickable_list)
     grouped_links = grouped_links.drop(columns="Link")
 
-    # Merge met tabel
-    tabel = pd.merge(tabel, grouped_links, on="Chauffeur", how="left")
+    # Merge links met tabel
+    tabel = pd.merge(tabel, grouped_links, on="volledige naam", how="left")
 
-    # HTML-tabel weergeven met klikbare links
+    # Kolomnaam netjes maken
+    tabel = tabel.rename(columns={"volledige naam": "Chauffeur"})
+
+    # Toon HTML-tabel met klikbare links
     st.markdown(tabel.to_html(escape=False, index=False), unsafe_allow_html=True)
 
 # --- TAB 2: Teamcoach ---
