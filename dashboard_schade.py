@@ -8,12 +8,19 @@ df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
 # Opschonen
 df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")]
 
+# Zet datumkolom om naar datetime
+df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
+
+# Voeg kwartaal-kolom toe (bijv. '2024-Q1')
+df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
+
 # Titel
 st.title("📊 Schadegevallen Dashboard")
 
 # Sidebar filters
 with st.sidebar:
     st.header("🔍 Filters")
+    
     selected_teamcoaches = st.multiselect(
         "Teamcoach", options=df["teamcoach"].dropna().unique(), default=df["teamcoach"].dropna().unique()
     )
@@ -23,15 +30,20 @@ with st.sidebar:
     selected_locaties = st.multiselect(
         "Locatie", options=df["Locatie"].dropna().unique(), default=df["Locatie"].dropna().unique()
     )
+    kwartaal_opties = sorted(df["Kwartaal"].dropna().unique())
+    selected_kwartaal = st.selectbox("Kwartaal", ["Allemaal"] + kwartaal_opties)
 
-# Filteren
+# Filter toepassen
 df_filtered = df[
     df["teamcoach"].isin(selected_teamcoaches) &
     df["Bus/ Tram"].isin(selected_voertuigen) &
     df["Locatie"].isin(selected_locaties)
 ]
 
-# Totaal KPI
+if selected_kwartaal != "Allemaal":
+    df_filtered = df_filtered[df_filtered["Kwartaal"] == selected_kwartaal]
+
+# KPI
 st.metric("Totaal aantal schadegevallen", len(df_filtered))
 
 # Tabs
@@ -40,17 +52,12 @@ tab1, tab2, tab3, tab4 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "�
 # --- TAB 1: Chauffeur ---
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
+    top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
-    # Keuzemenu: hoeveel chauffeurs tonen
-    top_n_option = st.selectbox("Toon top aantal chauffeurs op basis van schadegevallen:", ["10", "20", "50", "Allemaal"])
-
-    # Data voorbereiden
     chart_data = df_filtered["volledige naam"].value_counts()
     if top_n_option != "Allemaal":
-        top_n = int(top_n_option)
-        chart_data = chart_data.head(top_n)
+        chart_data = chart_data.head(int(top_n_option))
 
-    # Grafiek (horizontaal)
     fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
     chart_data.sort_values().plot(kind="barh", ax=ax)
     ax.set_xlabel("Aantal schadegevallen")
@@ -58,38 +65,45 @@ with tab1:
     ax.set_title(f"Top {top_n_option} schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
     st.pyplot(fig)
 
-    # Tabel
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Chauffeur"}))
 
 # --- TAB 2: Teamcoach ---
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
     chart_data = df_filtered["teamcoach"].value_counts()
-    st.bar_chart(chart_data)
+
+    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+    chart_data.sort_values().plot(kind="barh", ax=ax)
+    ax.set_xlabel("Aantal schadegevallen")
+    ax.set_ylabel("Teamcoach")
+    ax.set_title("Schadegevallen per teamcoach")
+    st.pyplot(fig)
+
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Teamcoach"}))
 
 # --- TAB 3: Voertuig ---
 with tab3:
     st.subheader("Aantal schadegevallen per type voertuig")
     chart_data = df_filtered["Bus/ Tram"].value_counts()
-    st.bar_chart(chart_data)
+
+    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+    chart_data.sort_values().plot(kind="barh", ax=ax)
+    ax.set_xlabel("Aantal schadegevallen")
+    ax.set_ylabel("Voertuigtype")
+    ax.set_title("Schadegevallen per type voertuig")
+    st.pyplot(fig)
+
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Voertuig"}))
 
 # --- TAB 4: Locatie ---
-# --- TAB 4: Locatie ---
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
+    top_loc_option = st.selectbox("Toon top aantal locaties:", ["10", "20", "50", "Allemaal"])
 
-    # Keuzemenu: hoeveel locaties tonen
-    top_loc_option = st.selectbox("Toon top aantal locaties op basis van schadegevallen:", ["10", "20", "50", "Allemaal"])
-
-    # Data voorbereiden
     chart_data = df_filtered["Locatie"].value_counts()
     if top_loc_option != "Allemaal":
-        top_n = int(top_loc_option)
-        chart_data = chart_data.head(top_n)
+        chart_data = chart_data.head(int(top_loc_option))
 
-    # Grafiek (horizontaal)
     fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
     chart_data.sort_values().plot(kind="barh", ax=ax)
     ax.set_xlabel("Aantal schadegevallen")
@@ -97,5 +111,4 @@ with tab4:
     ax.set_title(f"Top {top_loc_option} schadegevallen per locatie" if top_loc_option != "Allemaal" else "Alle locaties")
     st.pyplot(fig)
 
-    # Tabel
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Locatie"}))
