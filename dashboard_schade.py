@@ -76,8 +76,26 @@ with tab3:
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Voertuig"}))
 
 # --- TAB 4: Locatie ---
+# --- TAB 4: Locatie ---
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
+
+    # Keuzemenu: hoeveel locaties tonen
+    top_loc_option = st.selectbox("Toon top aantal locaties op basis van schadegevallen:", ["10", "20", "50", "Allemaal"])
+
+    # Data voorbereiden
     chart_data = df_filtered["Locatie"].value_counts()
-    st.bar_chart(chart_data)
+    if top_loc_option != "Allemaal":
+        top_n = int(top_loc_option)
+        chart_data = chart_data.head(top_n)
+
+    # Grafiek (horizontaal)
+    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+    chart_data.sort_values().plot(kind="barh", ax=ax)
+    ax.set_xlabel("Aantal schadegevallen")
+    ax.set_ylabel("Locatie")
+    ax.set_title(f"Top {top_loc_option} schadegevallen per locatie" if top_loc_option != "Allemaal" else "Alle locaties")
+    st.pyplot(fig)
+
+    # Tabel
     st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Locatie"}))
