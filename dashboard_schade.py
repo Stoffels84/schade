@@ -11,6 +11,9 @@ df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")]
 # Zet datumkolom om naar datetime
 df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
 
+# Filter rijen met ongeldige of lege datums (NaT)
+df = df[df["Datum"].notna()]
+
 # Voeg kwartaal-kolom toe (bijv. '2024-Q1')
 df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 
@@ -31,17 +34,15 @@ with st.sidebar:
         "Locatie", options=df["Locatie"].dropna().unique(), default=df["Locatie"].dropna().unique()
     )
     kwartaal_opties = sorted(df["Kwartaal"].dropna().unique())
-    selected_kwartaal = st.selectbox("Kwartaal", ["Allemaal"] + kwartaal_opties)
+    selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_opties, default=kwartaal_opties)
 
 # Filter toepassen
 df_filtered = df[
     df["teamcoach"].isin(selected_teamcoaches) &
     df["Bus/ Tram"].isin(selected_voertuigen) &
-    df["Locatie"].isin(selected_locaties)
+    df["Locatie"].isin(selected_locaties) &
+    df["Kwartaal"].isin(selected_kwartalen)
 ]
-
-if selected_kwartaal != "Allemaal":
-    df_filtered = df_filtered[df_filtered["Kwartaal"] == selected_kwartaal]
 
 # KPI
 st.metric("Totaal aantal schadegevallen", len(df_filtered))
