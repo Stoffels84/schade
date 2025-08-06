@@ -99,14 +99,18 @@ df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam].copy()
 
-    if not df.empty and "volledige naam" in df.columns and pd.notna(df["volledige naam"].iloc[0]):
+    if not df.empty:
         try:
+            # Probeer volledige naam zonder dienstnummer te tonen
             volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
             st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
-        except IndexError:
+        except Exception:
             st.info(f"👤 Ingelogd als chauffeur: {naam}")
     else:
         st.info(f"👤 Ingelogd als chauffeur: {naam}")
+else:
+    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
