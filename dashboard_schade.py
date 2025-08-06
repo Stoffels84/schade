@@ -60,7 +60,7 @@ with tab1:
     if top_n_option != "Allemaal":
         chart_data = chart_data.head(int(top_n_option))
 
-    # Plot horizontale bar chart
+    # Bar chart
     fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
     chart_data.sort_values().plot(kind="barh", ax=ax)
     ax.set_xlabel("Aantal schadegevallen")
@@ -70,33 +70,24 @@ with tab1:
 
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Groepeer links per chauffeur
-    grouped_links = (
-        df_filtered[["volledige naam", "Link"]]
-        .dropna()
-        .groupby("volledige naam")["Link"]
-        .apply(list)
-        .reset_index()
-    )
+    # Filter alleen de relevante chauffeurs
+    top_chauffeurs = chart_data.index.tolist()
 
-    # Voeg 'Aantal' toe aan grouped_links
-    grouped_links["Aantal"] = grouped_links["volledige naam"].map(chart_data.to_dict())
+    # Filter relevante schadegevallen + sorteren op datum
+    schade_links = df_filtered[
+        df_filtered["volledige naam"].isin(top_chauffeurs) & df_filtered["Link"].notna()
+    ][["volledige naam", "Datum", "Link"]].sort_values(by="Datum")
 
-    # Filter alleen de chauffeurs in de grafiek (top N)
-    grouped_links = grouped_links[grouped_links["volledige naam"].isin(chart_data.index)]
-
-    # Sorteer op aantal schadegevallen
-    grouped_links = grouped_links.sort_values(by="Aantal", ascending=False)
-
-    # Genereer expander-blokken
-    for _, row in grouped_links.iterrows():
-        chauffeur = row["volledige naam"]
-        links = row["Link"]
-        aantal = row["Aantal"]
+    # Maak expanders per chauffeur
+    for chauffeur in top_chauffeurs:
+        schade_chauffeur = schade_links[schade_links["volledige naam"] == chauffeur]
+        aantal = len(schade_chauffeur)
 
         with st.expander(f"{chauffeur} — {aantal} schadegevallen"):
-            for i, link in enumerate(links, start=1):
-                st.markdown(f"[🔗 Link {i}]({link})", unsafe_allow_html=True)
+            for _, row in schade_chauffeur.iterrows():
+                datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                link = row["Link"]
+                st.markdown
 
 # --- TAB 2: Teamcoach ---
 with tab2:
