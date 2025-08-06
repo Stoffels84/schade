@@ -48,81 +48,63 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("📄 PDF Export per teamcoach")
 
-    pdf_coach = st.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
-    generate_pdf = st.button("Genereer PDF")
+# --- PDF GENEREREN ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("📄 PDF Export per teamcoach")
 
-    if generate_pdf:
-        # Filter data voor PDF
-        schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]]
-        schade_pdf = schade_pdf.sort_values(by="Datum")
+pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df_filtered["teamcoach"].dropna().unique())
+generate_pdf = st.sidebar.button("Genereer PDF")
 
-        buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=A4)
-        styles = getSampleStyleSheet()
-        elements = []
+if generate_pdf:
+    schade_pdf = df_filtered[df_filtered["teamcoach"] == pdf_coach].copy()
+    schade_pdf = schade_pdf[["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].sort_values(by="Datum")
 
-        elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
-        elements.append(Spacer(1, 12))
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
 
-        # Aantal schadegevallen per chauffeur
-        chauffeurs = schade_pdf["volledige naam"].value_counts().reset_index()
-        chauffeurs.columns = ["Chauffeur", "Aantal"]
-        table_data = [["Chauffeur", "Aantal"]] + chauffeurs.values.tolist()
-        table = Table(table_data)
-        table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ]))
-        elements.append(Paragraph("Aantal schadegevallen per chauffeur:", styles["Heading2"]))
-        elements.append(table)
-        elements.append(Spacer(1, 12))
+    # Titel
+    elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
+    elements.append(Spacer(1, 12))
 
-        # Aantal per locatie
-        locaties = schade_pdf["Locatie"].value_counts().reset_index()
-        locaties.columns = ["Locatie", "Aantal"]
-        loc_data = [["Locatie", "Aantal"]] + locaties.values.tolist()
-        loc_table = Table(loc_data)
-        loc_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-            ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
-        ]))
-        elements.append(Paragraph("Aantal schadegevallen per locatie:", styles["Heading2"]))
-        elements.append(loc_table)
-        elements.append(Spacer(1, 12))
+    # Aantal schadegevallen per chauffeur
+    chauffeur_stats = schade_pdf["volledige naam"].value_counts()
+    elements.append(Paragraph("<b>Schadegevallen per chauffeur:</b>", styles["Heading2"]))
+    for chauffeur, aantal in chauffeur_stats.items():
+        elements.append(Paragraph(f"👤 {chauffeur}: {aantal}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
-        # Aantal per maand (grafiek)
-        schade_pdf["Maand"] = schade_pdf["Datum"].dt.to_period("M")
-        per_maand = schade_pdf["Maand"].value_counts().sort_index()
-        per_maand.index = per_maand.index.astype(str)
+    # Aantal schadegevallen per locatie
+    locatie_stats = schade_pdf["Locatie"].value_counts()
+    elements.append(Paragraph("<b>Schadegevallen per locatie:</b>", styles["Heading2"]))
+    for locatie, aantal in locatie_stats.items():
+        elements.append(Paragraph(f"📍 {locatie}: {aantal}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
-        fig, ax = plt.subplots(figsize=(6, 3))
-        per_maand.plot(kind="bar", ax=ax)
-        ax.set_title("Aantal schadegevallen per maand")
-        ax.set_ylabel("Aantal")
-        ax.set_xlabel("Maand")
-        plt.tight_layout()
+    # Overzicht per schadegeval
+    elements.append(Paragraph("<b>Details per schadegeval:</b>", styles["Heading2"]))
+    for _, row in schade_pdf.iterrows():
+        datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+        naam = row["volledige naam"]
+        locatie = row["Locatie"] or "onbekend"
+        voertuig = row["Bus/ Tram"] or "onbekend"
+        regel = f"📅 {datum} — 👤 {naam} — 🚌 {voertuig} — 📍 {locatie}"
+        if pd.notna(row["Link"]) and isinstance(row["Link"], str):
+            regel += f" — 🔗 {row['Link']}"
 
-        img_buffer = BytesIO()
-        plt.savefig(img_buffer, format="png")
-        plt.close(fig)
-        img_buffer.seek(0)
+        elements.append(Paragraph(regel, styles["Normal"]))
+        elements.append(Spacer(1, 6))
 
-        elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
-        elements.append(Image(img_buffer, width=400, height=200))
-        elements.append(Spacer(1, 12))
+    doc.build(elements)
+    buffer.seek(0)
 
-        # PDF bouwen en download aanbieden
-        doc.build(elements)
-        buffer.seek(0)
-
-        st.download_button(
-            label="📥 Download PDF",
-            data=buffer,
-            file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
-            mime="application/pdf"
-        )
+    st.sidebar.download_button(
+        label="📥 Download PDF",
+        data=buffer,
+        file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
+        mime="application/pdf"
+    )
 
 
 
