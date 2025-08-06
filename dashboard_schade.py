@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+from io import BytesIO
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 
 # Laad de data
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
@@ -55,6 +59,54 @@ st.metric("Totaal aantal schadegevallen", len(df_filtered))
 
 # Tabs
 tab1, tab2, tab3, tab4 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie"])
+
+
+# --- PDF genereren -
+
+st.markdown("---")
+st.sidebar.subheader("📄 PDF Export per teamcoach")
+
+pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
+generate_pdf = st.sidebar.button("Genereer PDF")
+
+if generate_pdf:
+    # Filter schadegevallen van de gekozen coach
+    schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]]
+    schade_pdf = schade_pdf.sort_values(by="Datum")
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    for _, row in schade_pdf.iterrows():
+        datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+        naam = row["volledige naam"]
+        locatie = row["Locatie"] or "onbekend"
+        voertuig = row["Bus/ Tram"] or "onbekend"
+        regel = f"📅 {datum} — 👤 {naam} — 🚌 {voertuig} — 📍 {locatie}"
+        if pd.notna(row["Link"]) and isinstance(row["Link"], str):
+            regel += f"<br/><a href='{row['Link']}'>🔗 Link</a>"
+
+        elements.append(Paragraph(regel, styles["Normal"]))
+        elements.append(Spacer(1, 6))
+
+    doc.build(elements)
+    buffer.seek(0)
+
+    st.sidebar.download_button(
+        label="📥 Download PDF",
+        data=buffer,
+        file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
+        mime="application/pdf"
+    )
+
+
+
+
 
 # --- TAB 1: Chauffeur ---
 with tab1:
