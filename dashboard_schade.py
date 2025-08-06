@@ -95,17 +95,21 @@ df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 
 
 # 🔐 Filter op basis van loginrol
+# Toon volledige naam of alleen nummer als fallback
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam].copy()
 
-    # Toon volledige naam of alleen nummer als backup
-    if not df.empty:
-        volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
-        st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+    if not df.empty and "volledige naam" in df.columns and pd.notna(df["volledige naam"].iloc[0]):
+        try:
+            volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
+            st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+        except IndexError:
+            st.info(f"👤 Ingelogd als chauffeur: {naam}")
     else:
         st.info(f"👤 Ingelogd als chauffeur: {naam}")
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
 
 
 
