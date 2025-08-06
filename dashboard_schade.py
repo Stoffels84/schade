@@ -51,7 +51,7 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
                 # 🕓 Laatste login bijwerken
                 gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == username, "laatste login"] = datetime.now()
                 gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("❌ Verkeerd wachtwoord.")
         else:
