@@ -93,15 +93,13 @@ df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 # ➕ Voeg kolom toe met dienstnummer uit "volledige naam"
 df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 
-df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
-st.write(df[["volledige naam", "dienstnummer"]].drop_duplicates())
-
-
 
 # 🔐 Filter op basis van loginrol
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam]
-    st.info(f"👤 Ingelogd als chauffeur: {naam}")
+    volledige_naam = df[df["dienstnummer"] == naam]["volledige naam"].iloc[0].split(" - ", 1)[1]
+st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
@@ -109,7 +107,9 @@ else:
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
 if rol == "chauffeur":
     df = df[df["volledige naam"] == naam]
-    st.info(f"👤 Ingelogd als chauffeur: {naam}")
+    volledige_naam = df[df["dienstnummer"] == naam]["volledige naam"].iloc[0].split(" - ", 1)[1]
+st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
