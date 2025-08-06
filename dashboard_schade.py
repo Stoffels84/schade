@@ -53,41 +53,58 @@ tab1, tab2, tab3, tab4 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "�
 # --- TAB 1: Chauffeur ---
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
+    
+    # Keuze voor top X chauffeurs
     top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
-    # Data voorbereiden
+    # Aantal schadegevallen per chauffeur
     chart_data = df_filtered["volledige naam"].value_counts()
     if top_n_option != "Allemaal":
         chart_data = chart_data.head(int(top_n_option))
 
-    # Bar chart
+    # Horizontale bar chart
     fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
     chart_data.sort_values().plot(kind="barh", ax=ax)
     ax.set_xlabel("Aantal schadegevallen")
     ax.set_ylabel("Chauffeur")
-    ax.set_title(f"Top {top_n_option} schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
+    ax.set_title(
+        f"Top {top_n_option} schadegevallen per chauffeur" 
+        if top_n_option != "Allemaal" else "Alle chauffeurs"
+    )
     st.pyplot(fig)
 
+    # Titel voor de accordionlijst
     st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Filter alleen de relevante chauffeurs
+    # Bepaal welke chauffeurs getoond moeten worden
     top_chauffeurs = chart_data.index.tolist()
 
-    # Filter relevante schadegevallen + sorteren op datum
+    # Filter de schadegevallen met links en datums
     schade_links = df_filtered[
         df_filtered["volledige naam"].isin(top_chauffeurs) & df_filtered["Link"].notna()
     ][["volledige naam", "Datum", "Link"]].sort_values(by="Datum")
 
-    # Maak expanders per chauffeur
+    # Maak 1 accordion per chauffeur
     for chauffeur in top_chauffeurs:
-        schade_chauffeur = schade_links[schade_links["volledige naam"] == chauffeur]
+        schade_chauffeur = df_filtered[
+            (df_filtered["volledige naam"] == chauffeur)
+        ][["Datum", "Link"]].sort_values(by="Datum")
+
         aantal = len(schade_chauffeur)
 
         with st.expander(f"{chauffeur} — {aantal} schadegevallen"):
             for _, row in schade_chauffeur.iterrows():
-                datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                datum_str = (
+                    row["Datum"].strftime("%d-%m-%Y")
+                    if pd.notna(row["Datum"]) else "onbekend"
+                )
                 link = row["Link"]
-                st.markdown
+
+                if pd.notna(link) and isinstance(link, str):
+                    st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+
 
 # --- TAB 2: Teamcoach ---
 with tab2:
