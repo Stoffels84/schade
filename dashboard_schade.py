@@ -3,9 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.lib.units import cm
 
 # Laad de data
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
@@ -54,11 +54,24 @@ if df_filtered.empty:
     st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     st.stop()
 
-st.markdown("---")
-st.sidebar.subheader("📄 PDF Export per teamcoach")
+# --- PDF genereren ---
 
-pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
-generate_pdf = st.sidebar.button("Genereer PDF")
+with st.sidebar:
+    st.header("🔍 Filters")
+
+    # Je bestaande filters
+    selected_teamcoaches = st.multiselect(...)
+    selected_voertuigen = st.multiselect(...)
+    selected_locaties = st.multiselect(...)
+    selected_kwartalen = st.multiselect(...)
+
+    st.markdown("---")
+    st.subheader("📄 PDF Export per teamcoach")
+
+    pdf_coach = st.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
+    generate_pdf = st.button("Genereer PDF")
+
+
 if generate_pdf:
     # Filter schadegevallen van de gekozen coach
     schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]]
@@ -87,12 +100,13 @@ if generate_pdf:
     doc.build(elements)
     buffer.seek(0)
 
-    st.sidebar.download_button(
+    st.download_button(
         label="📥 Download PDF",
         data=buffer,
         file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
         mime="application/pdf"
     )
+
 
 
 
