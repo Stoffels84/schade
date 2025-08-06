@@ -115,16 +115,39 @@ with tab1:
 # --- TAB 2: Teamcoach ---
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
+
+    # Data voorbereiden
     chart_data = df_filtered["teamcoach"].value_counts()
 
-    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
-    chart_data.sort_values().plot(kind="barh", ax=ax)
-    ax.set_xlabel("Aantal schadegevallen")
-    ax.set_ylabel("Teamcoach")
-    ax.set_title("Schadegevallen per teamcoach")
-    st.pyplot(fig)
+    if chart_data.empty:
+        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    else:
+        # Bar chart
+        fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+        chart_data.sort_values().plot(kind="barh", ax=ax)
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Teamcoach")
+        ax.set_title("Schadegevallen per teamcoach")
+        st.pyplot(fig)
 
-    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Teamcoach"}))
+        st.subheader("📂 Schadegevallen per teamcoach")
+
+        top_teamcoaches = chart_data.index.tolist()
+
+        for coach in top_teamcoaches:
+            schade_per_coach = df_filtered[df_filtered["teamcoach"] == coach][["Datum", "Link"]].sort_values(by="Datum")
+            aantal = len(schade_per_coach)
+
+            with st.expander(f"{coach} — {aantal} schadegevallen"):
+                for _, row in schade_per_coach.iterrows():
+                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                    link = row["Link"]
+
+                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                        st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+
 
 # --- TAB 3: Voertuig ---
 with tab3:
