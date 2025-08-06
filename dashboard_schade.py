@@ -44,6 +44,12 @@ df_filtered = df[
     df["Kwartaal"].isin(selected_kwartalen)
 ]
 
+# ❗ Controleer of er nog data is
+if df_filtered.empty:
+    st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    st.stop()
+
+
 # KPI
 st.metric("Totaal aantal schadegevallen", len(df_filtered))
 
