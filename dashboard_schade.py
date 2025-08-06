@@ -156,16 +156,41 @@ with tab2:
 # --- TAB 3: Voertuig ---
 with tab3:
     st.subheader("Aantal schadegevallen per type voertuig")
+
     chart_data = df_filtered["Bus/ Tram"].value_counts()
 
-    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
-    chart_data.sort_values().plot(kind="barh", ax=ax)
-    ax.set_xlabel("Aantal schadegevallen")
-    ax.set_ylabel("Voertuigtype")
-    ax.set_title("Schadegevallen per type voertuig")
-    st.pyplot(fig)
+    if chart_data.empty:
+        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    else:
+        # Bar chart
+        fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+        chart_data.sort_values().plot(kind="barh", ax=ax)
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Voertuigtype")
+        ax.set_title("Schadegevallen per type voertuig")
+        st.pyplot(fig)
 
-    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Voertuig"}))
+        st.subheader("📂 Schadegevallen per voertuigtype")
+
+        top_voertuigen = chart_data.index.tolist()
+
+        for voertuig in top_voertuigen:
+            schade_per_voertuig = df_filtered[
+                df_filtered["Bus/ Tram"] == voertuig
+            ][["Datum", "Link", "volledige naam"]].sort_values(by="Datum")
+
+            aantal = len(schade_per_voertuig)
+
+            with st.expander(f"{voertuig} — {aantal} schadegevallen"):
+                for _, row in schade_per_voertuig.iterrows():
+                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                    chauffeur = row["volledige naam"]
+                    link = row["Link"]
+
+                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
 
 # --- TAB 4: Locatie ---
 with tab4:
