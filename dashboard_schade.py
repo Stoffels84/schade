@@ -116,7 +116,6 @@ with tab1:
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
 
-    # Data voorbereiden
     chart_data = df_filtered["teamcoach"].value_counts()
 
     if chart_data.empty:
@@ -135,18 +134,23 @@ with tab2:
         top_teamcoaches = chart_data.index.tolist()
 
         for coach in top_teamcoaches:
-            schade_per_coach = df_filtered[df_filtered["teamcoach"] == coach][["Datum", "Link"]].sort_values(by="Datum")
+            schade_per_coach = df_filtered[
+                df_filtered["teamcoach"] == coach
+            ][["Datum", "Link", "volledige naam"]].sort_values(by="Datum")
+
             aantal = len(schade_per_coach)
 
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                    chauffeur = row["volledige naam"]
                     link = row["Link"]
 
                     if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
-                        st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+
 
 
 # --- TAB 3: Voertuig ---
