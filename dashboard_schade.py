@@ -121,12 +121,6 @@ if rol == "chauffeur":
         st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
     else:
         st.info(f"👤 Ingelogd als chauffeur: {naam}")
-else:
-    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
-
-
-
-
 
 # Titel
 st.title("📊 Schadegevallen Dashboard")
