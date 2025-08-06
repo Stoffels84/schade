@@ -72,8 +72,9 @@ st.sidebar.subheader("📄 PDF Export per teamcoach")
 pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
 generate_pdf = st.sidebar.button("Genereer PDF")
 
+from datetime import datetime
+
 if generate_pdf:
-    # Filter schadegevallen van de gekozen coach
     schade_pdf = df_filtered[df_filtered["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].copy()
     schade_pdf = schade_pdf.sort_values(by="Datum")
     buffer = BytesIO()
@@ -81,29 +82,43 @@ if generate_pdf:
     styles = getSampleStyleSheet()
     elements = []
 
-    # Titel
+    # 🧾 Titel en metadata
     elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
     elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"📅 Rapportdatum: {datetime.today().strftime('%d-%m-%Y')}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
-    # ➕ Aantal schadegevallen per chauffeur
+    # 📌 Totaal aantal
+    totaal = len(schade_pdf)
+    elements.append(Paragraph(f"📌 Totaal aantal schadegevallen: <b>{totaal}</b>", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # 📊 Samenvatting
+    eerste_datum = schade_pdf["Datum"].min().strftime("%d-%m-%Y")
+    laatste_datum = schade_pdf["Datum"].max().strftime("%d-%m-%Y")
+    elements.append(Paragraph("📊 Samenvatting:", styles["Heading2"]))
+    elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
+    elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam'].nunique()}", styles["Normal"]))
+    elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie'].nunique()}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # 👤 Aantal per chauffeur
     aantal_per_chauffeur = schade_pdf["volledige naam"].value_counts()
     elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
     for naam, count in aantal_per_chauffeur.items():
+        naam = naam or "onbekend"
         elements.append(Paragraph(f"- {naam}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
-    # ➕ Aantal schadegevallen per locatie
+    # 📍 Aantal per locatie
     aantal_per_locatie = schade_pdf["Locatie"].value_counts()
     elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
     for locatie, count in aantal_per_locatie.items():
+        locatie = locatie or "onbekend"
         elements.append(Paragraph(f"- {locatie}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
-    # ➕ Grafiek per maand
-    import matplotlib.pyplot as plt
-    from reportlab.platypus import Image
-    import tempfile
-
+    # 📈 Grafiek per maand
     schade_pdf["Maand"] = schade_pdf["Datum"].dt.to_period("M").astype(str)
     maand_data = schade_pdf["Maand"].value_counts().sort_index()
 
@@ -118,33 +133,39 @@ if generate_pdf:
         fig.savefig(tmpfile.name)
         plt.close(fig)
         elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
+        elements.append(Paragraph("Deze grafiek toont het aantal gemelde schadegevallen per maand voor deze teamcoach.", styles["Italic"]))
+        elements.append(Spacer(1, 6))
         elements.append(Image(tmpfile.name, width=400, height=200))
         elements.append(Spacer(1, 12))
 
-    # ➕ Individuele schadegevallen
+    # 📂 Individuele schadegevallen
     elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
     elements.append(Spacer(1, 6))
 
     for _, row in schade_pdf.iterrows():
         datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-        naam = row["volledige naam"]
+        naam = row["volledige naam"] or "onbekend"
         locatie = row["Locatie"] or "onbekend"
         voertuig = row["Bus/ Tram"] or "onbekend"
+        link = row["Link"]
+
         regel = f"📅 {datum} — 👤 {naam} — 🚌 {voertuig} — 📍 {locatie}"
-        if pd.notna(row["Link"]) and isinstance(row["Link"], str):
-            regel += f"<br/><a href='{row['Link']}'>🔗 Link</a>"
+        if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+            regel += f"<br/><a href='{link}'>🔗 Link</a>"
 
         elements.append(Paragraph(regel, styles["Normal"]))
         elements.append(Spacer(1, 6))
 
-    # PDF genereren
+    # Genereer PDF
     doc.build(elements)
     buffer.seek(0)
+
+    bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
 
     st.sidebar.download_button(
         label="📥 Download PDF",
         data=buffer,
-        file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
+        file_name=bestandsnaam,
         mime="application/pdf"
     )
 
