@@ -94,6 +94,8 @@ df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 
 df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
+st.write(df[["volledige naam", "dienstnummer"]].drop_duplicates())
+
 
 
 # 🔐 Filter op basis van loginrol
