@@ -256,7 +256,13 @@ with tab3:
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
     df_per_maand = df_filtered.copy()
-    df_per_maand["Maand"] = df_per_maand["Datum"].dt.month_name(locale='nl_BE')
+    # Maandnummer -> Nederlandstalige naam
+maanden_nl = {
+    1: "januari", 2: "februari", 3: "maart", 4: "april", 5: "mei", 6: "juni",
+    7: "juli", 8: "augustus", 9: "september", 10: "oktober", 11: "november", 12: "december"
+}
+df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl)
+
     df_per_maand["Maand"] = df_per_maand["Maand"].str.lower()
 
     maand_volgorde = [
