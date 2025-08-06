@@ -90,6 +90,17 @@ df = df[df["Datum"].notna()]
 # Voeg kwartaal-kolom toe (bijv. '2024-Q1')
 df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 
+# ➕ Voeg kolom toe met dienstnummer uit "volledige naam"
+df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
+
+# 🔐 Filter op basis van loginrol
+if rol == "chauffeur":
+    df = df[df["dienstnummer"] == naam]
+    st.info(f"👤 Ingelogd als chauffeur: {naam}")
+else:
+    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
+
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
 if rol == "chauffeur":
     df = df[df["volledige naam"] == naam]
