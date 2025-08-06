@@ -1,90 +1,70 @@
 import streamlit as st
 import pandas as pd
-import matplotlib.pyplot as plt
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+import matplotlib.pyplot as plt
 
-# --- Laad de data vóór je filters toont ---
+# Data inladen
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
+
+# Opschonen
 df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")]
 df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
 df = df[df["Datum"].notna()]
 df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 
-# --- Dan pas: Filters (zoals multiselect met df) ---
+# 🧭 FILTERS + PDF in de sidebar
 with st.sidebar:
     st.header("🔍 Filters")
-    selected_teamcoaches = st.multiselect("Teamcoach", options=df["teamcoach"].dropna().unique())
-
 
     selected_teamcoaches = st.multiselect(
-        "Teamcoach",
-        options=df["teamcoach"].dropna().unique(),
-        default=df["teamcoach"].dropna().unique()
+        "Teamcoach", options=df["teamcoach"].dropna().unique().tolist(),
+        default=df["teamcoach"].dropna().unique().tolist()
     )
-
     selected_voertuigen = st.multiselect(
-        "Voertuigtype",
-        options=df["Bus/ Tram"].dropna().unique(),
-        default=df["Bus/ Tram"].dropna().unique()
+        "Voertuigtype", options=df["Bus/ Tram"].dropna().unique().tolist(),
+        default=df["Bus/ Tram"].dropna().unique().tolist()
     )
-
     selected_locaties = st.multiselect(
-        "Locatie",
-        options=df["Locatie"].dropna().unique(),
-        default=df["Locatie"].dropna().unique()
+        "Locatie", options=df["Locatie"].dropna().unique().tolist(),
+        default=df["Locatie"].dropna().unique().tolist()
     )
-
     kwartaal_opties = sorted(df["Kwartaal"].dropna().unique())
-    selected_kwartalen = st.multiselect(
-        "Kwartaal",
-        options=kwartaal_opties,
-        default=kwartaal_opties
-    )
+    selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_opties, default=kwartaal_opties)
 
     st.markdown("---")
     st.subheader("📄 PDF Export per teamcoach")
+    pdf_coach = st.selectbox("Kies teamcoach voor export", options=df["teamcoach"].dropna().unique())
+    generate_pdf = st.button("Genereer PDF")
 
-# --- PDF GENEREREN ---
-st.sidebar.markdown("---")
-st.sidebar.subheader("📄 PDF Export per teamcoach")
+# 🔍 Filter toepassen
+df_filtered = df[
+    df["teamcoach"].isin(selected_teamcoaches) &
+    df["Bus/ Tram"].isin(selected_voertuigen) &
+    df["Locatie"].isin(selected_locaties) &
+    df["Kwartaal"].isin(selected_kwartalen)
+]
 
-pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
+# ⚠️ Check op lege dataset
+if df_filtered.empty:
+    st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    st.stop()
 
-generate_pdf = st.sidebar.button("Genereer PDF")
-
+# ✅ PDF-generatie uitvoeren
 if generate_pdf:
-    schade_pdf = df_filtered[df_filtered["teamcoach"] == pdf_coach].copy()
-    schade_pdf = schade_pdf[["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].sort_values(by="Datum")
+    schade_pdf = df[df["teamcoach"] == pdf_coach].copy()
+    schade_pdf = schade_pdf.sort_values(by="Datum")
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elements = []
 
-    # Titel
     elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
     elements.append(Spacer(1, 12))
 
-    # Aantal schadegevallen per chauffeur
-    chauffeur_stats = schade_pdf["volledige naam"].value_counts()
-    elements.append(Paragraph("<b>Schadegevallen per chauffeur:</b>", styles["Heading2"]))
-    for chauffeur, aantal in chauffeur_stats.items():
-        elements.append(Paragraph(f"👤 {chauffeur}: {aantal}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    # Aantal schadegevallen per locatie
-    locatie_stats = schade_pdf["Locatie"].value_counts()
-    elements.append(Paragraph("<b>Schadegevallen per locatie:</b>", styles["Heading2"]))
-    for locatie, aantal in locatie_stats.items():
-        elements.append(Paragraph(f"📍 {locatie}: {aantal}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    # Overzicht per schadegeval
-    elements.append(Paragraph("<b>Details per schadegeval:</b>", styles["Heading2"]))
     for _, row in schade_pdf.iterrows():
         datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
         naam = row["volledige naam"]
@@ -92,7 +72,7 @@ if generate_pdf:
         voertuig = row["Bus/ Tram"] or "onbekend"
         regel = f"📅 {datum} — 👤 {naam} — 🚌 {voertuig} — 📍 {locatie}"
         if pd.notna(row["Link"]) and isinstance(row["Link"], str):
-            regel += f" — 🔗 {row['Link']}"
+            regel += f"<br/><a href='{row['Link']}'>🔗 Link</a>"
 
         elements.append(Paragraph(regel, styles["Normal"]))
         elements.append(Spacer(1, 6))
@@ -106,6 +86,7 @@ if generate_pdf:
         file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
         mime="application/pdf"
     )
+
 
 
 
