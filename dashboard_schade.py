@@ -93,6 +93,9 @@ df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 # ➕ Voeg kolom toe met dienstnummer uit "volledige naam"
 df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 
+df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
+
+
 # 🔐 Filter op basis van loginrol
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam]
