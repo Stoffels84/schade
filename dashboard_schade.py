@@ -96,12 +96,17 @@ df["dienstnummer"] = df["volledige naam"].str.extract(r'^(\d+)', expand=False)
 
 # 🔐 Filter op basis van loginrol
 if rol == "chauffeur":
-    df = df[df["dienstnummer"] == naam]
-    volledige_naam = df[df["dienstnummer"] == naam]["volledige naam"].iloc[0].split(" - ", 1)[1]
-st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+    df = df[df["dienstnummer"] == naam].copy()
 
+    # Toon volledige naam of alleen nummer als backup
+    if not df.empty:
+        volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
+        st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+    else:
+        st.info(f"👤 Ingelogd als chauffeur: {naam}")
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
 
 
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
