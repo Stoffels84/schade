@@ -94,6 +94,7 @@ else:
 
 
 
+
 # Titel
 st.title("📊 Schadegevallen Dashboard")
 
