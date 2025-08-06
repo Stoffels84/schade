@@ -11,8 +11,8 @@ import tempfile
 import hashlib
 from datetime import datetime
 
-# 🔧 Zet op False om login uit te schakelen (voor testen/demo)
-LOGIN_ACTIEF = True
+# 🔧 Zet op True om login uit te schakelen (voor testen/demo)
+LOGIN_ACTIEF = False
 
 # 📥 Laad gebruikersbestand
 gebruikers_df = pd.read_excel("chauffeurs.xlsx")
