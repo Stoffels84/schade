@@ -8,6 +8,64 @@ from reportlab.lib.styles import getSampleStyleSheet
 import matplotlib.pyplot as plt
 from reportlab.platypus import Image
 import tempfile
+import hashlib
+from datetime import datetime
+
+# 🔧 Zet login aan/uit hier
+LOGIN_ACTIEF = True  # ⬅️ Zet op False om login uit te schakelen
+
+# 📥 Laad gebruikersbestand
+gebruikers_df = pd.read_excel("chauffeurs.xlsx")
+
+# 🔐 Functie om wachtwoorden te hashen
+def hash_wachtwoord(wachtwoord):
+    return hashlib.sha256(wachtwoord.encode()).hexdigest()
+
+# 🔐 Login via Streamlit
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if LOGIN_ACTIEF and not st.session_state.logged_in:
+    st.title("🔐 Inloggen")
+    username = st.text_input("Gebruikersnaam")
+    password = st.text_input("Wachtwoord", type="password")
+    login_button = st.button("Log in")
+
+    if login_button:
+        gebruiker = gebruikers_df[gebruikers_df["login"] == username]
+        if not gebruiker.empty:
+            echte_hash = hash_wachtwoord(password)
+            juiste_hash = hash_wachtwoord(str(gebruiker["paswoord"].values[0]))
+
+            if echte_hash == juiste_hash:
+                st.session_state.logged_in = True
+                st.session_state.username = username
+                st.success("✅ Ingelogd!")
+
+                # Laatste login updaten
+                gebruikers_df.loc[gebruikers_df["login"] == username, "laatste login"] = datetime.now()
+                gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
+                st.experimental_rerun()
+            else:
+                st.error("❌ Verkeerd wachtwoord.")
+        else:
+            st.error("❌ Gebruiker niet gevonden.")
+    st.stop()
+
+# 🚪 Login overslaan indien uitgeschakeld
+elif not LOGIN_ACTIEF:
+    st.session_state.logged_in = True
+    st.session_state.username = "demo"
+
+# 🧾 Gebruikersgegevens ophalen
+if not LOGIN_ACTIEF:
+    rol = "teamcoach"     # of "chauffeur" indien je wilt simuleren
+    naam = "demo"
+else:
+    ingelogde_info = gebruikers_df[gebruikers_df["login"] == st.session_state.username].iloc[0]
+    rol = ingelogde_info["rol"]
+    naam = ingelogde_info["login"]
+
 
 # Laad de data
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
