@@ -59,7 +59,7 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
     st.stop()
 
 # ⏩ Login overslaan bij demo/test
-elif not LOGIN_ACTIEF:
+if not LOGIN_ACTIEF:
     st.session_state.logged_in = True
     st.session_state.username = "demo"
 
@@ -106,12 +106,17 @@ else:
 
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
 if rol == "chauffeur":
-    df = df[df["volledige naam"] == naam]
-    volledige_naam = df[df["dienstnummer"] == naam]["volledige naam"].iloc[0].split(" - ", 1)[1]
-st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+    df = df[df["dienstnummer"] == naam].copy()
 
+    # Toon volledige naam of alleen nummer als backup
+    if not df.empty:
+        volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
+        st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
+    else:
+        st.info(f"👤 Ingelogd als chauffeur: {naam}")
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
 
 
 
