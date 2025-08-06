@@ -11,24 +11,28 @@ import tempfile
 import hashlib
 from datetime import datetime
 
-# 🔧 Toggle voor login-functionaliteit
-LOGIN_ACTIEF = True  # Zet op False om login uit te schakelen (voor demo/test)
+# 🔧 Zet op False om login uit te schakelen (voor testen/demo)
+LOGIN_ACTIEF = True
 
-# 📥 Laad gebruikersbestand en kolommen opschonen
+# 📥 Laad gebruikersbestand
 gebruikers_df = pd.read_excel("chauffeurs.xlsx")
-gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()  # -> ['gebruikersnaam', 'paswoord', 'rol', 'laatste login']
 
-# 🔐 Hashfunctie voor wachtwoordcontrole
+# 🧼 Kolomnamen en waarden opschonen
+gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()
+gebruikers_df["gebruikersnaam"] = gebruikers_df["gebruikersnaam"].astype(str).str.strip()
+
+# 🔐 Functie om wachtwoorden te hashen
 def hash_wachtwoord(wachtwoord):
-    return hashlib.sha256(wachtwoord.encode()).hexdigest()
+    return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
 
-# ⏮ Eerste keer? Loginstatus initialiseren
+# 🚪 Loginstatus initialiseren
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 
-# 🔐 Loginvenster tonen als login actief is
+# 🔐 Inlogformulier
 if LOGIN_ACTIEF and not st.session_state.logged_in:
     st.title("🔐 Inloggen")
+
     username = st.text_input("Gebruikersnaam")
     password = st.text_input("Wachtwoord", type="password")
     login_button = st.button("Log in")
@@ -44,7 +48,7 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
                 st.session_state.username = username
                 st.success("✅ Ingelogd!")
 
-                # Laatste login updaten
+                # 🕓 Laatste login bijwerken
                 gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == username, "laatste login"] = datetime.now()
                 gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
                 st.experimental_rerun()
@@ -54,19 +58,20 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
             st.error("❌ Gebruiker niet gevonden.")
     st.stop()
 
-# 🚪 Login overslaan als login uitgeschakeld is
+# ⏩ Login overslaan bij demo/test
 elif not LOGIN_ACTIEF:
     st.session_state.logged_in = True
     st.session_state.username = "demo"
 
-# 🎯 Gebruiker identificeren na login
+# 👤 Gebruikersgegevens ophalen
 if not LOGIN_ACTIEF:
-    rol = "teamcoach"  # of "chauffeur" voor simulatie
+    rol = "teamcoach"
     naam = "demo"
 else:
     ingelogde_info = gebruikers_df[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
     rol = ingelogde_info["rol"]
     naam = ingelogde_info["gebruikersnaam"]
+
 
 
 
