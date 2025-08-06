@@ -195,17 +195,39 @@ with tab3:
 # --- TAB 4: Locatie ---
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
-    top_loc_option = st.selectbox("Toon top aantal locaties:", ["10", "20", "50", "Allemaal"])
 
     chart_data = df_filtered["Locatie"].value_counts()
-    if top_loc_option != "Allemaal":
-        chart_data = chart_data.head(int(top_loc_option))
 
-    fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
-    chart_data.sort_values().plot(kind="barh", ax=ax)
-    ax.set_xlabel("Aantal schadegevallen")
-    ax.set_ylabel("Locatie")
-    ax.set_title(f"Top {top_loc_option} schadegevallen per locatie" if top_loc_option != "Allemaal" else "Alle locaties")
-    st.pyplot(fig)
+    if chart_data.empty:
+        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    else:
+        # Bar chart
+        fig, ax = plt.subplots(figsize=(8, len(chart_data) * 0.3 + 1))
+        chart_data.sort_values().plot(kind="barh", ax=ax)
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Locatie")
+        ax.set_title("Schadegevallen per locatie")
+        st.pyplot(fig)
 
-    st.dataframe(chart_data.reset_index(name="Aantal").rename(columns={"index": "Locatie"}))
+        st.subheader("📂 Schadegevallen per locatie")
+
+        top_locaties = chart_data.index.tolist()
+
+        for locatie in top_locaties:
+            schade_per_locatie = df_filtered[
+                df_filtered["Locatie"] == locatie
+            ][["Datum", "Link", "volledige naam"]].sort_values(by="Datum")
+
+            aantal = len(schade_per_locatie)
+
+            with st.expander(f"{locatie} — {aantal} schadegevallen"):
+                for _, row in schade_per_locatie.iterrows():
+                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                    chauffeur = row["volledige naam"]
+                    link = row["Link"]
+
+                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+
