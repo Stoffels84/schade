@@ -196,7 +196,13 @@ with tab3:
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
 
+    # ➕ Keuzemenu voor top X locaties
+    top_locatie_option = st.selectbox("Toon top aantal locaties:", ["10", "20", "50", "Allemaal"])
+
+    # Groeperen
     chart_data = df_filtered["Locatie"].value_counts()
+    if top_locatie_option != "Allemaal":
+        chart_data = chart_data.head(int(top_locatie_option))
 
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
@@ -206,7 +212,10 @@ with tab4:
         chart_data.sort_values().plot(kind="barh", ax=ax)
         ax.set_xlabel("Aantal schadegevallen")
         ax.set_ylabel("Locatie")
-        ax.set_title("Schadegevallen per locatie")
+        ax.set_title(
+            f"Top {top_locatie_option} schadegevallen per locatie"
+            if top_locatie_option != "Allemaal" else "Schadegevallen per locatie"
+        )
         st.pyplot(fig)
 
         st.subheader("📂 Schadegevallen per locatie")
@@ -230,4 +239,3 @@ with tab4:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
-
