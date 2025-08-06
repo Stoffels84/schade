@@ -111,12 +111,6 @@ if rol == "chauffeur":
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
-else:
-    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
-
-
-
-
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam].copy()
