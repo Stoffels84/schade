@@ -68,11 +68,9 @@ with tab1:
     ax.set_title(f"Top {top_n_option} schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
     st.pyplot(fig)
 
-    # 📋 Tabel opbouwen
-    tabel = chart_data.reset_index(name="Aantal")
-    tabel = tabel.rename(columns={"index": "volledige naam"})
+    st.subheader("📂 Schadegevallen per chauffeur")
 
-    # Groepeer meerdere links per chauffeur
+    # Groepeer links per chauffeur
     grouped_links = (
         df_filtered[["volledige naam", "Link"]]
         .dropna()
@@ -81,25 +79,24 @@ with tab1:
         .reset_index()
     )
 
-    # Maak klikbare HTML-links
-    def make_clickable_list(link_list):
-        if not link_list:
-            return ""
-        return "<br>".join(
-            [f'<a href="{link}" target="_blank">🔗 Link {i+1}</a>' for i, link in enumerate(link_list)]
-        )
+    # Voeg 'Aantal' toe aan grouped_links
+    grouped_links["Aantal"] = grouped_links["volledige naam"].map(chart_data.to_dict())
 
-    grouped_links["Links"] = grouped_links["Link"].apply(make_clickable_list)
-    grouped_links = grouped_links.drop(columns="Link")
+    # Filter alleen de chauffeurs in de grafiek (top N)
+    grouped_links = grouped_links[grouped_links["volledige naam"].isin(chart_data.index)]
 
-    # Merge links met tabel
-    tabel = pd.merge(tabel, grouped_links, on="volledige naam", how="left")
+    # Sorteer op aantal schadegevallen
+    grouped_links = grouped_links.sort_values(by="Aantal", ascending=False)
 
-    # Kolomnaam netjes maken
-    tabel = tabel.rename(columns={"volledige naam": "Chauffeur"})
+    # Genereer expander-blokken
+    for _, row in grouped_links.iterrows():
+        chauffeur = row["volledige naam"]
+        links = row["Link"]
+        aantal = row["Aantal"]
 
-    # Toon HTML-tabel met klikbare links
-    st.markdown(tabel.to_html(escape=False, index=False), unsafe_allow_html=True)
+        with st.expander(f"{chauffeur} — {aantal} schadegevallen"):
+            for i, link in enumerate(links, start=1):
+                st.markdown(f"[🔗 Link {i}]({link})", unsafe_allow_html=True)
 
 # --- TAB 2: Teamcoach ---
 with tab2:
