@@ -252,17 +252,18 @@ with tab2:
 
     # --- TAB 3: Voertuig ---
     # --- TAB 3: Voertuig ---
-    with tab3:
-        st.subheader("📈 Schadegevallen per maand per voertuigtype")
+with tab3:
+    st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
-        df_per_maand = df_filtered.copy()
-        # Maandnummer -> Nederlandstalige naam
-        maanden_nl = {
+    df_per_maand = df_filtered.copy()
+    
+    # Maandnummer -> Nederlandstalige naam
+    maanden_nl = {
         1: "januari", 2: "februari", 3: "maart", 4: "april", 5: "mei", 6: "juni",
         7: "juli", 8: "augustus", 9: "september", 10: "oktober", 11: "november", 12: "december"
     }
-    df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl)
 
+    df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl)
     df_per_maand["Maand"] = df_per_maand["Maand"].str.lower()
 
     maand_volgorde = [
@@ -282,8 +283,6 @@ with tab2:
     st.pyplot(fig2)
 
     st.subheader("Aantal schadegevallen per type voertuig")
-
-   
 
     chart_data = df_filtered["Bus/ Tram"].value_counts()
 
@@ -319,6 +318,7 @@ with tab2:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+
 
 # --- TAB 4: Locatie ---
 with tab4:
