@@ -5,6 +5,9 @@ from io import BytesIO
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
+import matplotlib.pyplot as plt
+from reportlab.platypus import Image
+import tempfile
 
 # Laad de data
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
@@ -71,7 +74,7 @@ generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
     # Filter schadegevallen van de gekozen coach
-    schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]]
+    schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].copy()
     schade_pdf = schade_pdf.sort_values(by="Datum")
 
     buffer = BytesIO()
@@ -79,8 +82,49 @@ if generate_pdf:
     styles = getSampleStyleSheet()
     elements = []
 
+    # Titel
     elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
     elements.append(Spacer(1, 12))
+
+    # ➕ Aantal schadegevallen per chauffeur
+    aantal_per_chauffeur = schade_pdf["volledige naam"].value_counts()
+    elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
+    for naam, count in aantal_per_chauffeur.items():
+        elements.append(Paragraph(f"- {naam}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # ➕ Aantal schadegevallen per locatie
+    aantal_per_locatie = schade_pdf["Locatie"].value_counts()
+    elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
+    for locatie, count in aantal_per_locatie.items():
+        elements.append(Paragraph(f"- {locatie}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # ➕ Grafiek per maand
+    import matplotlib.pyplot as plt
+    from reportlab.platypus import Image
+    import tempfile
+
+    schade_pdf["Maand"] = schade_pdf["Datum"].dt.to_period("M").astype(str)
+    maand_data = schade_pdf["Maand"].value_counts().sort_index()
+
+    fig, ax = plt.subplots()
+    maand_data.plot(kind="bar", ax=ax)
+    ax.set_title("Schadegevallen per maand")
+    ax.set_ylabel("Aantal")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+        fig.savefig(tmpfile.name)
+        plt.close(fig)
+        elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
+        elements.append(Image(tmpfile.name, width=400, height=200))
+        elements.append(Spacer(1, 12))
+
+    # ➕ Individuele schadegevallen
+    elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
+    elements.append(Spacer(1, 6))
 
     for _, row in schade_pdf.iterrows():
         datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
@@ -94,6 +138,7 @@ if generate_pdf:
         elements.append(Paragraph(regel, styles["Normal"]))
         elements.append(Spacer(1, 6))
 
+    # PDF genereren
     doc.build(elements)
     buffer.seek(0)
 
@@ -103,6 +148,7 @@ if generate_pdf:
         file_name=f"schade_{pdf_coach.replace(' ', '_')}.pdf",
         mime="application/pdf"
     )
+
 
 
 
