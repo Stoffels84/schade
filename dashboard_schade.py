@@ -74,7 +74,7 @@ generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
     # Filter schadegevallen van de gekozen coach
-    schade_pdf = df[df["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].copy()
+  schade_pdf = df_filtered[df_filtered["teamcoach"] == pdf_coach][["Datum", "volledige naam", "Locatie", "Bus/ Tram", "Link"]].copy()
     schade_pdf = schade_pdf.sort_values(by="Datum")
 
     buffer = BytesIO()
