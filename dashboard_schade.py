@@ -52,7 +52,8 @@ with st.sidebar:
 st.sidebar.markdown("---")
 st.sidebar.subheader("📄 PDF Export per teamcoach")
 
-pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df_filtered["teamcoach"].dropna().unique())
+pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", df["teamcoach"].dropna().unique())
+
 generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
