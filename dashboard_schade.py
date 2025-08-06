@@ -82,6 +82,15 @@ df = df[df["Datum"].notna()]
 # Voeg kwartaal-kolom toe (bijv. '2024-Q1')
 df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 
+# 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
+if rol == "chauffeur":
+    df = df[df["volledige naam"] == naam]
+    st.info(f"👤 Ingelogd als chauffeur: {naam}")
+else:
+    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
+
+
+
 # Titel
 st.title("📊 Schadegevallen Dashboard")
 
