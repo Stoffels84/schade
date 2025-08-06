@@ -1,15 +1,24 @@
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
 from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
-import matplotlib.pyplot as plt
-import streamlit as st
 
+# --- Laad de data vóór je filters toont ---
+df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
+df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")]
+df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
+df = df[df["Datum"].notna()]
+df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 
-# Sidebar
+# --- Dan pas: Filters (zoals multiselect met df) ---
 with st.sidebar:
     st.header("🔍 Filters")
+    selected_teamcoaches = st.multiselect("Teamcoach", options=df["teamcoach"].dropna().unique())
+
 
     selected_teamcoaches = st.multiselect(
         "Teamcoach",
