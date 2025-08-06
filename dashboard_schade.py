@@ -112,15 +112,20 @@ else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
 # 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
+# 🚫 Chauffeur mag alleen zijn eigen schadegevallen zien
 if rol == "chauffeur":
     df = df[df["dienstnummer"] == naam].copy()
 
-    # Toon volledige naam of alleen nummer als backup
-    if not df.empty:
-        volledige_naam = df["volledige naam"].iloc[0].split(" - ", 1)[1]
+    try:
+        # Probeer volledige naam te tonen (na split)
+        eerste_waarde = df["volledige naam"].iloc[0]
+        volledige_naam = eerste_waarde.split(" - ", 1)[1]
         st.info(f"👤 Ingelogd als chauffeur: {volledige_naam} ({naam})")
-    else:
+    except:
+        # Fallback: toon enkel dienstnummer
         st.info(f"👤 Ingelogd als chauffeur: {naam}")
+else:
+    st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
 # Titel
 st.title("📊 Schadegevallen Dashboard")
