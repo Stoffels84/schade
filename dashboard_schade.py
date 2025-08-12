@@ -117,26 +117,35 @@ else:
 # =========================
 gecoachte_ids = set()
 try:
-    coach_df = pd.read_excel("Coachingslijst.xlsx", sheet_name="Voltooide coachings")
-    coach_df.columns = coach_df.columns.str.strip().str.lower()
-    mogelijke_kolommen = ["P-nr", "dienstnummer", "personeelsnummer", "id", "nr"]
-    kolom_pers = next((k for k in mogelijke_kolommen if k in coach_df.columns), None)
-    if kolom_pers is None:
-        st.warning("⚠️ In 'Coachingslijst.xlsx' (tab 'Voltooide coachings') is geen kolom met P-nr gevonden.")
+    # Vind het juiste tabblad (case-insensitive, spaties negeren)
+    xls = pd.ExcelFile("Coachingslijst.xlsx")
+    sheet_naam = next((s for s in xls.sheet_names if s.strip().lower() == "voltooide coachings"), None)
+
+    if sheet_naam is None:
+        st.warning("⚠️ Geen tabblad gevonden dat 'Voltooide coachings' heet.")
     else:
-        gecoachte_ids = set(
-            coach_df[kolom_pers]
-            .astype(str)
-            .str.extract(r"(\d+)", expand=False)
-            .dropna()
-            .str.strip()
-            .tolist()
-        )
+        coach_df = pd.read_excel("Coachingslijst.xlsx", sheet_name=sheet_naam)
+        coach_df.columns = coach_df.columns.str.strip()
+
+        if "P-nr" not in coach_df.columns:
+            st.warning("⚠️ Kolom 'P-nr' niet gevonden in tabblad 'Voltooide coachings'.")
+        else:
+            # Haal alleen het nummerdeel uit P-nr kolom
+            gecoachte_ids = set(
+                coach_df["P-nr"]
+                .astype(str)
+                .str.extract(r"(\d+)", expand=False)
+                .dropna()
+                .str.strip()
+                .tolist()
+            )
+
 except Exception as e:
     st.warning(f"⚠️ Coachingslijst niet gevonden of onleesbaar: {e}")
 
 # Vlag in hoofd-DF
 df["gecoacht"] = df["dienstnummer"].astype(str).isin(gecoachte_ids)
+
 
 # =========================
 # UI: Titel + Caption
