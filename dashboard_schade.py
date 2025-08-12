@@ -117,12 +117,12 @@ else:
 # =========================
 gecoachte_ids = set()
 try:
-    coach_df = pd.read_excel("Coachingslijst.xlsx", sheet_name="voltooide coachings")
+    coach_df = pd.read_excel("Coachingslijst.xlsx", sheet_name="Voltooide coachings")
     coach_df.columns = coach_df.columns.str.strip().str.lower()
     mogelijke_kolommen = ["personeelsnr", "dienstnummer", "personeelsnummer", "id", "nr"]
     kolom_pers = next((k for k in mogelijke_kolommen if k in coach_df.columns), None)
     if kolom_pers is None:
-        st.warning("⚠️ In 'Coachingslijst.xlsx' (tab 'voltooide coachings') is geen kolom met personeelsnrs gevonden.")
+        st.warning("⚠️ In 'Coachingslijst.xlsx' (tab 'Voltooide coachings') is geen kolom met personeelsnrs gevonden.")
     else:
         gecoachte_ids = set(
             coach_df[kolom_pers]
