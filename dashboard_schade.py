@@ -28,8 +28,17 @@ def naam_naar_dn(naam: str) -> str | None:
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = pd.read_excel("chauffeurs.xlsx")
 gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()
-if "gebruikersnaam" in gebruikers_df.columns:
-    gebruikers_df["gebruikersnaam"] = gebruikers_df["gebruikersnaam"].astype(str).str.strip()
+
+# Zorg dat de kolommen die we gebruiken bestaan
+vereist_login_kolommen = {"gebruikersnaam", "paswoord"}
+missend_login = [c for c in vereist_login_kolommen if c not in gebruikers_df.columns]
+if missend_login:
+    st.error(f"Login configuratie onvolledig. Ontbrekende kolommen in 'chauffeurs.xlsx': {', '.join(missend_login)}")
+    st.stop()
+
+# String-strippen voor zekere vergelijking
+gebruikers_df["gebruikersnaam"] = gebruikers_df["gebruikersnaam"].astype(str).str.strip()
+gebruikers_df["paswoord"] = gebruikers_df["paswoord"].astype(str)
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -39,34 +48,44 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
     username = st.text_input("Gebruikersnaam")
     password = st.text_input("Wachtwoord", type="password")
     if st.button("Log in"):
-        gebruiker = gebruikers_df[gebruikers_df.get("gebruikersnaam", "") == username]
-        if not gebruiker.empty:
-            echte_hash = hash_wachtwoord(password)
-            juiste_hash = hash_wachtwoord(str(gebruiker["paswoord"].values[0]))
-            if echte_hash == juiste_hash:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success("✅ Ingelogd!")
-                if "laatste login" in gebruikers_df.columns:
-                    gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == username, "laatste login"] = datetime.now()
+        rij = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == str(username).strip()]
+
+        if not rij.empty and str(rij["paswoord"].iloc[0]) == str(password):
+            st.session_state.logged_in = True
+            st.session_state.username = str(username).strip()
+            st.success("✅ Ingelogd!")
+
+            # 'laatste login' bijwerken als kolom bestaat
+            if "laatste login" in gebruikers_df.columns:
+                try:
+                    gebruikers_df.loc[rij.index, "laatste login"] = datetime.now()
                     gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
-                st.rerun()
-            else:
-                st.error("❌ Verkeerd wachtwoord.")
+                except Exception as e:
+                    st.warning(f"Kon 'laatste login' niet opslaan: {e}")
+
+            st.rerun()
         else:
-            st.error("❌ Gebruiker niet gevonden.")
+            st.error("❌ Onjuiste gebruikersnaam of wachtwoord.")
     st.stop()
 else:
     if not LOGIN_ACTIEF:
         st.session_state.logged_in = True
         st.session_state.username = "demo"
 
-# Rol + naam
+
+# ========= Rol + naam =========
 if not LOGIN_ACTIEF:
-    rol = "teamcoach"; naam = "demo"
+    rol = "teamcoach"
+    naam = "demo"
 else:
-    ingelogde_info = gebruikers_df[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
-    rol = ingelogde_info["rol"]; naam = ingelogde_info["gebruikersnaam"]
+    ingelogde_info = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
+    rol = str(ingelogde_info.get("rol", "teamcoach")).strip()
+
+    # Als 'dienstnummer' in chauffeurs.xlsx staat, gebruik die voor chauffeur-filter; anders fallback op gebruikersnaam
+    if rol == "chauffeur":
+        naam = str(ingelogde_info.get("dienstnummer", ingelogde_info["gebruikersnaam"])).strip()
+    else:
+        naam = str(ingelogde_info["gebruikersnaam"]).strip()
 
 # ========= Data laden & opschonen =========
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
