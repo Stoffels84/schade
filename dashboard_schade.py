@@ -271,69 +271,74 @@ with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
     top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
+    # 1) Data veilig opbouwen
     chart_data = df_filtered["volledige naam"].value_counts()
     if top_n_option != "Allemaal":
         chart_data = chart_data.head(int(top_n_option))
 
-def get_bol_kleur(naam: str) -> str:
-    dn = naam_naar_dn(naam)
-    if not dn:
-        return ""
-    dn = str(dn)
-    if dn in gecoachte_ids:
-        return "🟡 "  # gele bol
-    elif dn in coaching_ids:
-        return "🔵 "  # blauwe bol
-    return ""
-
-
-
-    chart_data_sorted = chart_data.sort_values()
-    # Geel voor gecoacht, grijs voor niet-gecoacht
-    bar_colors = []
-for nm in chart_data_sorted.index:
-    dn = naam_naar_dn(nm)
-    if dn and str(dn) in gecoachte_ids:
-        bar_colors.append("#FFD54F")  # geel
-    elif dn and str(dn) in coaching_ids:
-        bar_colors.append("#4FC3F7")  # blauw
+    # Als er niets te tonen is, stop hier netjes
+    if chart_data.empty:
+        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        bar_colors.append("#BDBDBD")  # grijs
+        chart_data_sorted = chart_data.sort_values()
 
+        # 2) Kleurencode (geel = voltooide coachings, blauw = coaching, grijs = geen)
+        def _kleur(nm: str) -> str:
+            dn = naam_naar_dn(nm)
+            if not dn:
+                return "#BDBDBD"
+            sdn = str(dn)
+            if 'gecoachte_ids' in globals() and sdn in gecoachte_ids:
+                return "#FFD54F"  # geel
+            if 'coaching_ids' in globals() and sdn in coaching_ids:
+                return "#4FC3F7"  # blauw
+            return "#BDBDBD"     # grijs
 
-    fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data_sorted) * 0.3 + 1)))
-    chart_data_sorted.plot(kind="barh", ax=ax, color=bar_colors)
-    ax.set_xlabel("Aantal schadegevallen")
-    ax.set_ylabel("Chauffeur")
-    ax.set_title("Top " + top_n_option + " schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
-    st.pyplot(fig)
+        bar_colors = [_kleur(nm) for nm in chart_data_sorted.index]
 
-st.subheader("📂 Schadegevallen per chauffeur")
-top_chauffeurs = chart_data.index.tolist()
+        # 3) Plot
+        rows = len(chart_data_sorted)
+        fig_height = min(20, max(2.5, rows * 0.35 + 1))
+        fig, ax = plt.subplots(figsize=(8, fig_height))
+        chart_data_sorted.plot(kind="barh", ax=ax, color=bar_colors)
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Chauffeur")
+        ax.set_title("Top " + top_n_option + " schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
+        st.pyplot(fig)
 
-for chauffeur in top_chauffeurs:
-    aantal = len(df_filtered[df_filtered["volledige naam"] == chauffeur])
-    # Gebruik get_bol_kleur als die bestaat, anders fallback
-    if "get_bol_kleur" in globals():
-        badge = get_bol_kleur(chauffeur)
-    else:
-        badge = "🟡 " if is_gecoacht_naam(chauffeur) else ""
+        # 4) Lijst per chauffeur (met badges)
+        st.subheader("📂 Schadegevallen per chauffeur")
+        top_chauffeurs = chart_data.index.tolist()
 
-    titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
+        def get_bol_kleur(naam: str) -> str:
+            dn = naam_naar_dn(naam)
+            if not dn:
+                return ""
+            sdn = str(dn)
+            if 'gecoachte_ids' in globals() and sdn in gecoachte_ids:
+                return "🟡 "
+            if 'coaching_ids' in globals() and sdn in coaching_ids:
+                return "🔵 "
+            return ""
 
-    with st.expander(titel):
-        schade_chauffeur = (
-            df_filtered.loc[df_filtered["volledige naam"] == chauffeur, ["Datum", "Link"]]
-            .sort_values(by="Datum")
-        )
+        for chauffeur in top_chauffeurs:
+            aantal = int(chart_data.get(chauffeur, 0))
+            badge = get_bol_kleur(chauffeur)
+            titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
 
-        for _, row in schade_chauffeur.iterrows():
-            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-            link = row.get("Link")
-            if isinstance(link, str) and link.startswith(("http://", "https://")):
-                st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
-            else:
-                st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+            with st.expander(titel):
+                schade_chauffeur = (
+                    df_filtered.loc[df_filtered["volledige naam"] == chauffeur, ["Datum", "Link"]]
+                    .sort_values(by="Datum")
+                )
+                for _, row in schade_chauffeur.iterrows():
+                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                    link = row.get("Link")
+                    if isinstance(link, str) and link.startswith(("http://", "https://")):
+                        st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+
 
 
 # ========= TAB 2: Teamcoach =========
