@@ -276,8 +276,39 @@ if df_filtered.empty:
     st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     st.stop()
 
-# ========= KPI =========
-st.metric("Totaal aantal schadegevallen", len(df_filtered))
+# ========= KPI met trendpijl =========
+total_now = len(df_filtered)
+
+# Bereken hoeveel dagen je huidige selectie beslaat
+days = (pd.to_datetime(date_to) - pd.to_datetime(date_from)).days + 1
+
+# Maak een mask voor dezelfde duur vóór de huidige periode
+prev_mask = (
+    (df["Datum"].dt.date >= (pd.to_datetime(date_from) - pd.Timedelta(days=days)).date()) &
+    (df["Datum"].dt.date < pd.to_datetime(date_from).date())
+)
+
+# Tel het aantal schadegevallen in die vorige periode met dezelfde filters
+total_prev = len(
+    df[
+        prev_mask &
+        df["teamcoach"].isin(selected_teamcoaches) &
+        df["Bus/ Tram"].isin(selected_voertuigen) &
+        df["Locatie"].isin(selected_locaties) &
+        df["Kwartaal"].isin(selected_kwartalen)
+    ]
+)
+
+# Verschil berekenen (delta)
+delta = total_now - total_prev
+
+# Metric weergeven met pijl omhoog/omlaag
+st.metric(
+    "Totaal aantal schadegevallen",
+    total_now,
+    delta=delta
+)
+
 
 # ========= Tabs =========
 tab1, tab2, tab3, tab4 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie"])
