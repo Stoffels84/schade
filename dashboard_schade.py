@@ -203,9 +203,10 @@ pref_kw = qp.get_all("kwartaal")  or sorted(df["Kwartaal"].dropna().unique().tol
 with st.sidebar:
     st.header("🔍 Filters")
     selected_teamcoaches = st.multiselect(
-        "Teamcoach", options=df["teamcoach"].dropna().unique().tolist(),
-        default=df["teamcoach"].dropna().unique().tolist()
+      "Teamcoach", options=df["teamcoach"].dropna().unique().tolist(),
+        default=pref_tc
     )
+
     selected_voertuigen = st.multiselect(
         "Voertuigtype", options=df["Bus/ Tram"].dropna().unique().tolist(),
         default=df["Bus/ Tram"].dropna().unique().tolist()
