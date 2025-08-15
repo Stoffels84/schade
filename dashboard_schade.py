@@ -193,6 +193,13 @@ st.title("📊 Schadegevallen Dashboard")
 st.caption("🟡 = voltooide coaching · 🔵 = in coaching (lopend)")
 
 # ========= Sidebar filters =========
+# ========= Filter presets via query params =========
+qp = st.query_params  # Streamlit 1.32+
+pref_tc = qp.get_all("teamcoach") or df["teamcoach"].dropna().unique().tolist()
+pref_vh = qp.get_all("voertuig")  or df["Bus/ Tram"].dropna().unique().tolist()
+pref_lo = qp.get_all("locatie")   or df["Locatie"].dropna().unique().tolist()
+pref_kw = qp.get_all("kwartaal")  or sorted(df["Kwartaal"].dropna().unique().tolist())
+
 with st.sidebar:
     st.header("🔍 Filters")
     selected_teamcoaches = st.multiselect(
