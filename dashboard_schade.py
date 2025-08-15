@@ -110,30 +110,39 @@ else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
 # ========= Coachingslijst inlezen (Voltooide coachings / P-nr) =========
-gecoachte_ids = set()
+gecoachte_ids = set()       # 🟡
+coaching_ids = set()        # 🔵
+
 try:
     xls = pd.ExcelFile("Coachingslijst.xlsx")
-    sheet_naam = next((s for s in xls.sheet_names if s.strip().lower() == "voltooide coachings"), None)
-    if sheet_naam is None:
-        st.warning("⚠️ Geen tabblad gevonden dat 'Voltooide coachings' heet in Coachingslijst.xlsx.")
-    else:
-        coach_df = pd.read_excel("Coachingslijst.xlsx", sheet_name=sheet_naam)
+
+    # 🟡 Voltooide coachings
+    sheet_voltooid = next((s for s in xls.sheet_names if s.strip().lower() == "voltooide coachings"), None)
+    if sheet_voltooid:
+        coach_df = pd.read_excel(xls, sheet_name=sheet_voltooid)
         coach_df.columns = coach_df.columns.str.strip()
-        if "P-nr" not in coach_df.columns:
-            st.warning("⚠️ Kolom 'P-nr' niet gevonden in tabblad 'Voltooide coachings'.")
-        else:
+        if "P-nr" in coach_df.columns:
             gecoachte_ids = set(
-                coach_df["P-nr"]
-                .astype(str)
-                .str.extract(r"(\d+)", expand=False)
-                .dropna()
-                .str.strip()
-                .tolist()
+                coach_df["P-nr"].astype(str).str.extract(r"(\d+)", expand=False).dropna().str.strip().tolist()
             )
+
+    # 🔵 Coaching
+    sheet_coaching = next((s for s in xls.sheet_names if s.strip().lower() == "coaching"), None)
+    if sheet_coaching:
+        coach2_df = pd.read_excel(xls, sheet_name=sheet_coaching)
+        coach2_df.columns = coach2_df.columns.str.strip()
+        if "P-nr" in coach2_df.columns:
+            coaching_ids = set(
+                coach2_df["P-nr"].astype(str).str.extract(r"(\d+)", expand=False).dropna().str.strip().tolist()
+            )
+
 except Exception as e:
     st.warning(f"⚠️ Coachingslijst niet gevonden of onleesbaar: {e}")
 
-df["gecoacht"] = df["dienstnummer"].astype(str).isin(gecoachte_ids)
+
+df["gecoacht_geel"] = df["dienstnummer"].astype(str).isin(gecoachte_ids)
+df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
+
 
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
@@ -266,13 +275,31 @@ with tab1:
     if top_n_option != "Allemaal":
         chart_data = chart_data.head(int(top_n_option))
 
-    def is_gecoacht_naam(naam: str) -> bool:
-        dn = naam_naar_dn(naam)
-        return (dn is not None) and (str(dn) in gecoachte_ids)
+def get_bol_kleur(naam: str) -> str:
+    dn = naam_naar_dn(naam)
+    if not dn:
+        return ""
+    dn = str(dn)
+    if dn in gecoachte_ids:
+        return "🟡 "  # gele bol
+    elif dn in coaching_ids:
+        return "🔵 "  # blauwe bol
+    return ""
+
+
 
     chart_data_sorted = chart_data.sort_values()
     # Geel voor gecoacht, grijs voor niet-gecoacht
-    bar_colors = ["#FFD54F" if is_gecoacht_naam(nm) else "#BDBDBD" for nm in chart_data_sorted.index]
+    bar_colors = []
+for nm in chart_data_sorted.index:
+    dn = naam_naar_dn(nm)
+    if dn and str(dn) in gecoachte_ids:
+        bar_colors.append("#FFD54F")  # geel
+    elif dn and str(dn) in coaching_ids:
+        bar_colors.append("#4FC3F7")  # blauw
+    else:
+        bar_colors.append("#BDBDBD")  # grijs
+
 
     fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data_sorted) * 0.3 + 1)))
     chart_data_sorted.plot(kind="barh", ax=ax, color=bar_colors)
@@ -283,11 +310,13 @@ with tab1:
 
     st.subheader("📂 Schadegevallen per chauffeur")
     top_chauffeurs = chart_data.index.tolist()
-    for chauffeur in top_chauffeurs:
-        aantal = len(df_filtered[df_filtered["volledige naam"] == chauffeur])
-        badge = "🟡 " if is_gecoacht_naam(chauffeur) else ""
-        titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
-        with st.expander(titel):
+for chauffeur in top_chauffeurs:
+    aantal = len(df_filtered[df_filtered["volledige naam"] == chauffeur])
+    badge = get_bol_kleur(chauffeur)
+    titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
+    with st.expander(titel):
+        ...
+
             schade_chauffeur = df_filtered[df_filtered["volledige naam"] == chauffeur][["Datum", "Link"]].sort_values(by="Datum")
             for _, row in schade_chauffeur.iterrows():
                 datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
