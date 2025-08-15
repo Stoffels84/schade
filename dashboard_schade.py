@@ -308,23 +308,33 @@ for nm in chart_data_sorted.index:
     ax.set_title("Top " + top_n_option + " schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
     st.pyplot(fig)
 
-    st.subheader("📂 Schadegevallen per chauffeur")
-    top_chauffeurs = chart_data.index.tolist()
+st.subheader("📂 Schadegevallen per chauffeur")
+top_chauffeurs = chart_data.index.tolist()
+
 for chauffeur in top_chauffeurs:
     aantal = len(df_filtered[df_filtered["volledige naam"] == chauffeur])
-    badge = get_bol_kleur(chauffeur)
-    titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
-    with st.expander(titel):
-        ...
+    # Gebruik get_bol_kleur als die bestaat, anders fallback
+    if "get_bol_kleur" in globals():
+        badge = get_bol_kleur(chauffeur)
+    else:
+        badge = "🟡 " if is_gecoacht_naam(chauffeur) else ""
 
-        schade_chauffeur = df_filtered[df_filtered["volledige naam"] == chauffeur][["Datum", "Link"]].sort_values(by="Datum")
-         for _, row in schade_chauffeur.iterrows():
-              datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-             link = row["Link"]
-            if pd.notna(link) and isinstance(link, str):
-                  st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
-              else:
-                 st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+    titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
+
+    with st.expander(titel):
+        schade_chauffeur = (
+            df_filtered.loc[df_filtered["volledige naam"] == chauffeur, ["Datum", "Link"]]
+            .sort_values(by="Datum")
+        )
+
+        for _, row in schade_chauffeur.iterrows():
+            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+            link = row.get("Link")
+            if isinstance(link, str) and link.startswith(("http://", "https://")):
+                st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+            else:
+                st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
