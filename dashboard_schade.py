@@ -3,8 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 import tempfile
 import hashlib
 from datetime import datetime
@@ -72,7 +73,6 @@ else:
         st.session_state.logged_in = True
         st.session_state.username = "demo"
 
-
 # ========= Rol + naam =========
 if not LOGIN_ACTIEF:
     rol = "teamcoach"
@@ -80,7 +80,6 @@ if not LOGIN_ACTIEF:
 else:
     ingelogde_info = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
     rol = str(ingelogde_info.get("rol", "teamcoach")).strip()
-
     # Als 'dienstnummer' in chauffeurs.xlsx staat, gebruik die voor chauffeur-filter; anders fallback op gebruikersnaam
     if rol == "chauffeur":
         naam = str(ingelogde_info.get("dienstnummer", ingelogde_info["gebruikersnaam"])).strip()
@@ -89,6 +88,12 @@ else:
 
 # ========= Data laden & opschonen =========
 df = pd.read_excel("schade met macro.xlsm", sheet_name="BRON")
+vereist = {"volledige naam","Datum","Locatie","Bus/ Tram","teamcoach"}
+missend = [c for c in vereist if c not in df.columns]
+if missend:
+    st.error(f"Ontbrekende kolommen in data: {', '.join(missend)}")
+    st.stop()
+
 df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")].copy()
 df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
 df = df[df["Datum"].notna()].copy()
@@ -109,7 +114,7 @@ if rol == "chauffeur":
 else:
     st.success(f"🧑‍💼 Ingelogd als teamcoach: {naam}")
 
-# ========= Coachingslijst inlezen (Voltooide coachings / P-nr) =========
+# ========= Coachingslijst inlezen (Voltooide coachings / Coaching) =========
 gecoachte_ids = set()       # 🟡
 coaching_ids = set()        # 🔵
 
@@ -139,14 +144,19 @@ try:
 except Exception as e:
     st.warning(f"⚠️ Coachingslijst niet gevonden of onleesbaar: {e}")
 
+# Extra info in de sidebar om te zien of er wel blauwe/geel IDs zijn
+with st.sidebar:
+    st.markdown("### ℹ️ Coaching-status")
+    st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
+    st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
+# Flags op df (optioneel, niet strikt noodzakelijk voor weergave)
 df["gecoacht_geel"] = df["dienstnummer"].astype(str).isin(gecoachte_ids)
 df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
-
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
-st.caption("🟡 = chauffeur heeft een voltooide coaching in de Coachingslijst")
+st.caption("🟡 = voltooide coaching · 🔵 = in coaching (lopend)")
 
 # ========= Sidebar filters =========
 with st.sidebar:
@@ -247,19 +257,31 @@ if generate_pdf:
             elements.append(Image(tmpfile.name, width=400, height=200))
             elements.append(Spacer(1, 12))
 
+    # Compacte tabel met individuele schadegevallen
     elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
     elements.append(Spacer(1, 6))
+    tabel_data = [["Datum", "Chauffeur", "Voertuig", "Locatie", "Link"]]
     for _, row in schade_pdf.iterrows():
         datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
         nm = row["volledige naam"] or "onbekend"
         locatie = row["Locatie"] or "onbekend"
         voertuig = row["Bus/ Tram"] or "onbekend"
-        link = row["Link"]
-        regel = f"📅 {datum} — 👤 {nm} — 🚌 {voertuig} — 📍 {locatie}"
-        if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
-            regel += f"<br/><a href='{link}'>🔗 Link</a>"
-        elements.append(Paragraph(regel, styles["Normal"]))
-        elements.append(Spacer(1, 6))
+        link = row.get("Link")
+        linktxt = str(link) if (pd.notna(link) and isinstance(link, str) and link.startswith(("http://","https://"))) else "-"
+        tabel_data.append([datum, nm, voertuig, locatie, linktxt])
+
+    if len(tabel_data) > 1:
+        tbl = Table(tabel_data, repeatRows=1, colWidths=[70, 160, 60, 100, 70])
+        tbl.setStyle(TableStyle([
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+            ("ALIGN", (0,0), (-1,0), "CENTER"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("FONTSIZE", (0,0), (-1,-1), 8),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
+        ]))
+        elements.append(tbl)
 
     doc.build(elements)
     buffer.seek(0)
@@ -282,17 +304,21 @@ with tab1:
     else:
         chart_data_sorted = chart_data.sort_values()
 
-        # 2) Kleurencode (geel = voltooide coachings, blauw = coaching, grijs = geen)
+        # 2) Kleurencode (geel = voltooide coachings, blauw = coaching, paars = beide, grijs = geen)
         def _kleur(nm: str) -> str:
             dn = naam_naar_dn(nm)
             if not dn:
                 return "#BDBDBD"
             sdn = str(dn)
-            if 'gecoachte_ids' in globals() and sdn in gecoachte_ids:
+            in_geel = sdn in gecoachte_ids
+            in_blauw = sdn in coaching_ids
+            if in_geel and in_blauw:
+                return "#7E57C2"  # paars (mix)
+            if in_geel:
                 return "#FFD54F"  # geel
-            if 'coaching_ids' in globals() and sdn in coaching_ids:
-                return "#4FC3F7"  # blauw
-            return "#BDBDBD"     # grijs
+            if in_blauw:
+                return "#2196F3"  # fel blauw
+            return "#BDBDBD"      # grijs
 
         bar_colors = [_kleur(nm) for nm in chart_data_sorted.index]
 
@@ -306,6 +332,14 @@ with tab1:
         ax.set_title("Top " + top_n_option + " schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
         st.pyplot(fig)
 
+        # Debug caption (optioneel)
+        kleuren_map = {nm: _kleur(nm) for nm in chart_data_sorted.index}
+        n_geel = sum(1 for c in kleuren_map.values() if c == "#FFD54F")
+        n_blauw = sum(1 for c in kleuren_map.values() if c == "#2196F3")
+        n_mix = sum(1 for c in kleuren_map.values() if c == "#7E57C2")
+        n_grijs = sum(1 for c in kleuren_map.values() if c == "#BDBDBD")
+        st.caption(f"Legenda (getoonde namen): 🟡 {n_geel} · 🔵 {n_blauw} · 🟡🔵 {n_mix} · ⚪ {n_grijs}")
+
         # 4) Lijst per chauffeur (met badges)
         st.subheader("📂 Schadegevallen per chauffeur")
         top_chauffeurs = chart_data.index.tolist()
@@ -315,9 +349,13 @@ with tab1:
             if not dn:
                 return ""
             sdn = str(dn)
-            if 'gecoachte_ids' in globals() and sdn in gecoachte_ids:
+            in_geel = sdn in gecoachte_ids
+            in_blauw = sdn in coaching_ids
+            if in_geel and in_blauw:
+                return "🟡🔵 "
+            if in_geel:
                 return "🟡 "
-            if 'coaching_ids' in globals() and sdn in coaching_ids:
+            if in_blauw:
                 return "🔵 "
             return ""
 
@@ -339,6 +377,7 @@ with tab1:
                     else:
                         st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
 
+# ======== (Plaats hier je overige tabs Teamcoach/Voertuig/Locatie zoals je ze al had) ========
 
 
 # ========= TAB 2: Teamcoach =========
