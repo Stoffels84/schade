@@ -7,6 +7,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Tabl
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import tempfile
+import plotly.express as px
 import hashlib
 from datetime import datetime
 
@@ -25,6 +26,39 @@ def naam_naar_dn(naam: str) -> str | None:
     s = pd.Series([str(naam)])
     dn = s.astype(str).str.extract(r"^(\d+)", expand=False).iloc[0]
     return str(dn).strip() if pd.notna(dn) else None
+
+# ========= Kleuren (consistent in app & PDF waar van toepassing) =========
+COLOR_GEEL  = "#FFD54F"  # voltooide coaching
+COLOR_BLAUW = "#2196F3"  # in coaching
+COLOR_MIX   = "#7E57C2"  # beide
+COLOR_GRIJS = "#BDBDBD"  # geen
+
+
+
+def status_van_chauffeur(naam: str) -> str:
+    """Geef status op basis van sets: 'Voltooid', 'Coaching', 'Beide', of 'Geen'."""
+    dn = naam_naar_dn(naam)
+    if not dn:
+        return "Geen"
+    sdn = str(dn)
+    in_geel = sdn in gecoachte_ids
+    in_blauw = sdn in coaching_ids
+    if in_geel and in_blauw:
+        return "Beide"
+    if in_geel:
+        return "Voltooid"
+    if in_blauw:
+        return "Coaching"
+    return "Geen"
+
+def badge_van_status(status: str) -> str:
+    return {
+        "Voltooid": "🟡 ",
+        "Coaching": "🔵 ",
+        "Beide":    "🟡🔵 ",
+        "Geen":     ""
+    }.get(status, "")
+
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = pd.read_excel("chauffeurs.xlsx")
@@ -288,80 +322,91 @@ if generate_pdf:
     bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
     st.sidebar.download_button(label="📥 Download PDF", data=buffer, file_name=bestandsnaam, mime="application/pdf")
 
+
+
 # ========= TAB 1: Chauffeur =========
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
     top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
     # 1) Data veilig opbouwen
-    chart_data = df_filtered["volledige naam"].value_counts()
+    chart_series = df_filtered["volledige naam"].value_counts()
     if top_n_option != "Allemaal":
-        chart_data = chart_data.head(int(top_n_option))
+        chart_series = chart_series.head(int(top_n_option))
 
-    # Als er niets te tonen is, stop hier netjes
-    if chart_data.empty:
+    if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        chart_data_sorted = chart_data.sort_values()
+        # Bouw dataframe voor plotly
+        plot_df = (
+            chart_series
+            .rename_axis("chauffeur")
+            .reset_index(name="aantal")
+        )
+        # Voeg status + badge toe
+        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
+        plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
+        # Sorteer oplopend zodat horizontale bars van klein -> groot lopen
+        plot_df = plot_df.sort_values("aantal", ascending=True, kind="stable")
 
-        # 2) Kleurencode (geel = voltooide coachings, blauw = coaching, paars = beide, grijs = geen)
-        def _kleur(nm: str) -> str:
-            dn = naam_naar_dn(nm)
-            if not dn:
-                return "#BDBDBD"
-            sdn = str(dn)
-            in_geel = sdn in gecoachte_ids
-            in_blauw = sdn in coaching_ids
-            if in_geel and in_blauw:
-                return "#7E57C2"  # paars (mix)
-            if in_geel:
-                return "#FFD54F"  # geel
-            if in_blauw:
-                return "#2196F3"  # fel blauw
-            return "#BDBDBD"      # grijs
+        # 2) Legenda met badges boven de grafiek (visueel/snappy)
+        st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
 
-        bar_colors = [_kleur(nm) for nm in chart_data_sorted.index]
+        # 3) Plotly grafiek met consistente kleuren + hover-tooltips
+        color_map = {
+            "Voltooid": COLOR_GEEL,
+            "Coaching": COLOR_BLAUW,
+            "Beide":    COLOR_MIX,
+            "Geen":     COLOR_GRIJS,
+        }
 
-        # 3) Plot
-        rows = len(chart_data_sorted)
-        fig_height = min(20, max(2.5, rows * 0.35 + 1))
-        fig, ax = plt.subplots(figsize=(8, fig_height))
-        chart_data_sorted.plot(kind="barh", ax=ax, color=bar_colors)
-        ax.set_xlabel("Aantal schadegevallen")
-        ax.set_ylabel("Chauffeur")
-        ax.set_title("Top " + top_n_option + " schadegevallen per chauffeur" if top_n_option != "Allemaal" else "Alle chauffeurs")
-        st.pyplot(fig)
+        fig = px.bar(
+            plot_df,
+            x="aantal",
+            y="chauffeur",
+            color="status",
+            orientation="h",
+            color_discrete_map=color_map,
+            hover_data={
+                "aantal": True,
+                "chauffeur": True,
+                "status": True,
+                "badge": False,  # we tonen badge in hovertemplate zelf
+            },
+            labels={"aantal": "Aantal schadegevallen", "chauffeur": "Chauffeur", "status": "Status"},
+        )
 
-        # Debug caption (optioneel)
-        kleuren_map = {nm: _kleur(nm) for nm in chart_data_sorted.index}
-        n_geel = sum(1 for c in kleuren_map.values() if c == "#FFD54F")
-        n_blauw = sum(1 for c in kleuren_map.values() if c == "#2196F3")
-        n_mix = sum(1 for c in kleuren_map.values() if c == "#7E57C2")
-        n_grijs = sum(1 for c in kleuren_map.values() if c == "#BDBDBD")
-        st.caption(f"Legenda (getoonde namen): 🟡 {n_geel} · 🔵 {n_blauw} · 🟡🔵 {n_mix} · ⚪ {n_grijs}")
+        # Hovertemplate met badge + nette formatting
+        fig.update_traces(
+            hovertemplate="<b>%{customdata[0]}</b><br>"
+                          "Status: %{marker.color}<extra></extra>",
+        )
+        # Bovenstaande is tricky met kleur; gebruik customdata met badge + status
+        fig.update_traces(
+            customdata=plot_df[["badge", "status"]].to_numpy(),
+            hovertemplate="<b>%{y}</b><br>"
+                          "Aantal: %{x}<br>"
+                          "Status: %{customdata[0]}%{customdata[1]}<extra></extra>"
+        )
 
-        # 4) Lijst per chauffeur (met badges)
+        # Layout: compacte marges, horizontale legenda bovenaan
+        fig.update_layout(
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+            margin=dict(l=10, r=10, t=10, b=10),
+            height=max(260, 28 * len(plot_df) + 120),
+        )
+
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+        # 4) Lijst per chauffeur (expanders) – badges voor de titel
         st.subheader("📂 Schadegevallen per chauffeur")
-        top_chauffeurs = chart_data.index.tolist()
+        # Gebruik dezelfde volgorde als de grafiek (van klein naar groot)
+        ordered_names = plot_df["chauffeur"].tolist()
 
-        def get_bol_kleur(naam: str) -> str:
-            dn = naam_naar_dn(naam)
-            if not dn:
-                return ""
-            sdn = str(dn)
-            in_geel = sdn in gecoachte_ids
-            in_blauw = sdn in coaching_ids
-            if in_geel and in_blauw:
-                return "🟡🔵 "
-            if in_geel:
-                return "🟡 "
-            if in_blauw:
-                return "🔵 "
-            return ""
-
-        for chauffeur in top_chauffeurs:
-            aantal = int(chart_data.get(chauffeur, 0))
-            badge = get_bol_kleur(chauffeur)
+        for chauffeur in ordered_names[::-1]:  # van groot -> klein voor prettige leeservaring
+            aantal = int(chart_series.get(chauffeur, 0))
+            status = status_van_chauffeur(chauffeur)
+            badge = badge_van_status(status)
             titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
 
             with st.expander(titel):
@@ -377,7 +422,6 @@ with tab1:
                     else:
                         st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
 
-# ======== (Plaats hier je overige tabs Teamcoach/Voertuig/Locatie zoals je ze al had) ========
 
 
 # ========= TAB 2: Teamcoach =========
