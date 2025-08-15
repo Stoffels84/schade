@@ -208,15 +208,15 @@ with st.sidebar:
     )
 
     selected_voertuigen = st.multiselect(
-        "Voertuigtype", options=df["Bus/ Tram"].dropna().unique().tolist(),
-        default=df["Bus/ Tram"].dropna().unique().tolist()
+      "Voertuigtype", options=df["Bus/ Tram"].dropna().unique().tolist(),
+        default=pref_vh
     )
     selected_locaties = st.multiselect(
-        "Locatie", options=df["Locatie"].dropna().unique().tolist(),
-        default=df["Locatie"].dropna().unique().tolist()
+      "Locatie", options=df["Locatie"].dropna().unique().tolist(),
+        default=pref_lo
     )
     kwartaal_opties = sorted(df["Kwartaal"].dropna().unique().tolist())
-    selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_opties, default=kwartaal_opties)
+        selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_opties, default=pref_kw)
 
 df_filtered = df[
     df["teamcoach"].isin(selected_teamcoaches) &
