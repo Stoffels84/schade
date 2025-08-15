@@ -317,14 +317,14 @@ for chauffeur in top_chauffeurs:
     with st.expander(titel):
         ...
 
-            schade_chauffeur = df_filtered[df_filtered["volledige naam"] == chauffeur][["Datum", "Link"]].sort_values(by="Datum")
-            for _, row in schade_chauffeur.iterrows():
-                datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                link = row["Link"]
-                if pd.notna(link) and isinstance(link, str):
-                    st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+        schade_chauffeur = df_filtered[df_filtered["volledige naam"] == chauffeur][["Datum", "Link"]].sort_values(by="Datum")
+         for _, row in schade_chauffeur.iterrows():
+              datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+             link = row["Link"]
+            if pd.notna(link) and isinstance(link, str):
+                  st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+              else:
+                 st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
