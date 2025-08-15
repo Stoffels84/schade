@@ -217,6 +217,15 @@ with st.sidebar:
     )
     kwartaal_opties = sorted(df["Kwartaal"].dropna().unique().tolist())
         selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_opties, default=pref_kw)
+if st.button("🔖 Bewaar filters in URL"):
+    qp.clear()
+    qp["teamcoach"] = selected_teamcoaches
+    qp["voertuig"]  = selected_voertuigen
+    qp["locatie"]   = selected_locaties
+    qp["kwartaal"]  = selected_kwartalen
+    st.success("Link met filters staat nu in de adresbalk. Kopieer & deel!")
+
+
 
 df_filtered = df[
     df["teamcoach"].isin(selected_teamcoaches) &
