@@ -275,9 +275,9 @@ with st.sidebar:
         date_from = df["Datum"].min().date()
         date_to   = df["Datum"].max().date()
 
- if st.button("🔄 Reset filters"):
-    qp.clear()
-    st.rerun()
+     if st.button("🔄 Reset filters"):
+        qp.clear()
+        st.rerun()
 
 
 # ========= Filters toepassen =========
