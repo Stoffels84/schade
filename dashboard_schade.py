@@ -249,7 +249,24 @@ locatie_options  = sorted(df["Locatie"].dropna().unique().tolist())
 kwartaal_options = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
 
 # Prefs uit URL
-raw_tc = (raw.get("teamcoach") or pd.Series(dtype="string")).astype("string")
+# Teamcoach-opties robuust ophalen (zonder booleaanse 'or' op Series)
+if "teamcoach" in raw.columns:
+    raw_tc = raw["teamcoach"].astype("string")
+else:
+    raw_tc = pd.Series(dtype="string")
+
+teamcoach_options = (
+    pd.Series(raw_tc)
+      .dropna()
+      .astype("string")
+      .str.strip()
+      .replace({"": pd.NA})
+      .dropna()
+      .unique()
+      .tolist()
+)
+teamcoach_options = sorted(teamcoach_options)
+
 teamcoach_options = sorted(pd.Series(raw_tc).dropna().unique().tolist())
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
 pref_vh = _clean_list(qp.get_all("voertuig"), voertuig_options) or voertuig_options
