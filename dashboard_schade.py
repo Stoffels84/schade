@@ -275,19 +275,10 @@ with st.sidebar:
         date_from = df["Datum"].min().date()
         date_to   = df["Datum"].max().date()
 
-    colA, colB = st.columns(2)
-    with colA:
-        if st.button("🔄 Reset filters"):
-            qp.clear()
-            st.rerun()
-    with colB:
-        if st.button("🔖 Bewaar filters in URL"):
-            qp.clear()
-            qp["teamcoach"] = selected_teamcoaches
-            qp["locatie"]   = selected_locaties
-            qp["voertuig"]  = selected_voertuigen
-            qp["kwartaal"]  = selected_kwartalen
-            st.success("Link met filters staat nu in de adresbalk. Kopieer & deel!")
+ if st.button("🔄 Reset filters"):
+    qp.clear()
+    st.rerun()
+
 
 # ========= Filters toepassen =========
 sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
