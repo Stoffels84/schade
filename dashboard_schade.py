@@ -37,15 +37,19 @@ def load_excel(path, **kwargs):
     def naam_naar_dn(naam: str) -> str | None:
 
 def toon_chauffeur(x):
+    """Geef nette chauffeur-naam terug, met fallback.
+    Knipt vooraan '1234 - ' weg als dat aanwezig is.
+    """
     if x is None or pd.isna(x):
         return "onbekend"
+
     s = str(x).strip()
     if not s or s.lower() in {"nan", "none", "<na>"}:
         return "onbekend"
-    s = re.sub(r"^\s*\d+\s*-\s*", "", s)  # knip '1234 - ' weg
+
+    # strip '1234 - ' of '1234-'
+    s = re.sub(r"^\s*\d+\s*-\s*", "", s)
     return s
-
-
 
 
     
