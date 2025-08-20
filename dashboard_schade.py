@@ -495,9 +495,11 @@ with tab1:
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
     chart_data = df_filtered["teamcoach_disp"].value_counts()
+
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Bar chart
         fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
         chart_data.sort_values().plot(kind="barh", ax=ax)
         ax.set_xlabel("Aantal schadegevallen")
@@ -505,24 +507,45 @@ with tab2:
         ax.set_title("Schadegevallen per teamcoach")
         st.pyplot(fig)
 
+        # Detailweergave
         st.subheader("📂 Schadegevallen per teamcoach")
         for coach in chart_data.index.tolist():
-            # Gebruik de DISPLAY-kolommen + voeg LOCATIE en VOERTUIG toe
-            base_cols = ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp"]
-            cols = base_cols + (["Link"] if "Link" in df_filtered.columns else [])
+            # Kolommen klaarzetten
+            base_cols = ["Datum", "volledige naam", "volledige naam_disp",
+                         "BusTram_disp", "Locatie_disp"]
+            if "Link" in df_filtered.columns:
+                base_cols.append("Link")
+
             schade_per_coach = (
-                df_filtered[df_filtered["teamcoach_disp"] == coach][cols]
+                df_filtered[df_filtered["teamcoach_disp"] == coach][base_cols]
                 .sort_values(by="Datum")
             )
             aantal = len(schade_per_coach)
+
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
-                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam_disp"]
-                    voertuig  = row["BusTram_disp"]
-                    locatie   = row["Locatie_disp"]
+                    # Datum
+                    datum_str = (
+                        row["Datum"].strftime("%d-%m-%Y")
+                        if pd.notna(row["Datum"]) else "onbekend"
+                    )
+
+                    # Chauffeur: pak eerst de echte naam, anders fallback naar display
+                    raw_name = row.get("volledige naam")
+                    if raw_name not in (None, pd.NA) and str(raw_name).strip() != "":
+                        chauffeur = str(raw_name).strip()
+                    else:
+                        chauffeur = row["volledige naam_disp"]
+
+                    # Voertuig & locatie
+                    voertuig = row.get("BusTram_disp", "onbekend")
+                    locatie  = row.get("Locatie_disp", "onbekend")
+
+                    # Tekst bouwen
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
-                    link = row.get("Link") if "Link" in cols else None
+
+                    # Link (indien aanwezig en geldig)
+                    link = row.get("Link") if "Link" in schade_per_coach.columns else None
                     if isinstance(link, str) and link.startswith(("http://", "https://")):
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
