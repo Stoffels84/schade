@@ -35,6 +35,20 @@ def load_excel(path, **kwargs):
         st.stop()
 
 def naam_naar_dn(naam: str) -> str | None:
+
+def toon_chauffeur(x: object) -> str:
+    """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
+    if pd.isna(x):
+        return "onbekend"
+    s = str(x).strip()
+    if not s or s.lower() in {"nan", "none", "<na>"}:
+        return "onbekend"
+    # strip '1234 - ' of '1234-'
+    s = re.sub(r"^\s*\d+\s*-\s*", "", s)
+    return s
+
+
+    
     """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
     if not isinstance(naam, str):
         return None
@@ -494,12 +508,14 @@ with tab1:
 # ========= TAB 2: Teamcoach =========
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
+
+    # Aggregatie voor de bar chart
     chart_data = df_filtered["teamcoach_disp"].value_counts()
 
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Bar chart
+        # Bar chart (matplotlib)
         fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
         chart_data.sort_values().plot(kind="barh", ax=ax)
         ax.set_xlabel("Aantal schadegevallen")
@@ -507,10 +523,22 @@ with tab2:
         ax.set_title("Schadegevallen per teamcoach")
         st.pyplot(fig)
 
-        # Detailweergave
+        # Detailweergave (expander per teamcoach)
         st.subheader("📂 Schadegevallen per teamcoach")
+
+        # Kleine helper om hyperlinks uit Excel-formules te halen (werkt ook zonder)
+        HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
+        def extract_url(x) -> str | None:
+            if pd.isna(x): 
+                return None
+            s = str(x).strip()
+            if s.startswith(("http://", "https://")):
+                return s
+            m = HYPERLINK_RE.search(s)
+            return m.group(1) if m else None
+
         for coach in chart_data.index.tolist():
-            # Kolommen klaarzetten
+            # Kolommen klaarzetten (Link optioneel)
             base_cols = ["Datum", "volledige naam", "volledige naam_disp",
                          "BusTram_disp", "Locatie_disp"]
             if "Link" in df_filtered.columns:
@@ -524,18 +552,14 @@ with tab2:
 
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
-                    # Datum
+                    # Datum tonen
                     datum_str = (
                         row["Datum"].strftime("%d-%m-%Y")
                         if pd.notna(row["Datum"]) else "onbekend"
                     )
 
-                    # Chauffeur: pak eerst de echte naam, anders fallback naar display
-                    raw_name = row.get("volledige naam")
-                    if raw_name not in (None, pd.NA) and str(raw_name).strip() != "":
-                        chauffeur = str(raw_name).strip()
-                    else:
-                        chauffeur = row["volledige naam_disp"]
+                    # **FIX**: robuuste naamweergave
+                    chauffeur = toon_chauffeur(row.get("volledige naam"))
 
                     # Voertuig & locatie
                     voertuig = row.get("BusTram_disp", "onbekend")
@@ -545,11 +569,13 @@ with tab2:
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
 
                     # Link (indien aanwezig en geldig)
-                    link = row.get("Link") if "Link" in schade_per_coach.columns else None
-                    if isinstance(link, str) and link.startswith(("http://", "https://")):
+                    link_raw = row.get("Link") if "Link" in schade_per_coach.columns else None
+                    link = extract_url(link_raw)
+                    if isinstance(link, str) and link:
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(prefix + "❌ Geen geldige link")
+
 
 
 # ========= TAB 3: Voertuig =========
