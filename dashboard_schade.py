@@ -450,34 +450,32 @@ if generate_pdf:
             pass
 
 # ========= TAB 1: Chauffeur =========
+# ========= TAB 1: Chauffeur =========
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
-    top_n_option = st.selectbox("Toon top aantal chauffeurs:", ["10", "20", "50", "Allemaal"])
 
-    # 1) Data veilig opbouwen
+    # Toon altijd alle chauffeurs (geen top-N selectie meer)
     chart_series = df_filtered["volledige naam"].value_counts()
-    if top_n_option != "Allemaal":
-        chart_series = chart_series.head(int(top_n_option))
 
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Bouw dataframe voor plotly
+        # Dataframe voor plotly
         plot_df = (
             chart_series
             .rename_axis("chauffeur")
             .reset_index(name="aantal")
         )
-        # Voeg status + badge toe
+        # Status + badge
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
         # Sorteer oplopend zodat horizontale bars van klein -> groot lopen
         plot_df = plot_df.sort_values("aantal", ascending=True, kind="stable")
 
-        # 2) Legenda met badges boven de grafiek (visueel/snappy)
+        # Legenda
         st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
 
-        # 3) Plotly grafiek met consistente kleuren + hover-tooltips
+        # Plotly grafiek met consistente kleuren + hover-tooltips
         color_map = {
             "Voltooid": COLOR_GEEL,
             "Coaching": COLOR_BLAUW,
@@ -492,16 +490,10 @@ with tab1:
             color="status",
             orientation="h",
             color_discrete_map=color_map,
-            hover_data={
-                "aantal": True,
-                "chauffeur": True,
-                "status": True,
-                "badge": False,
-            },
+            hover_data={"aantal": True, "chauffeur": True, "status": True, "badge": False},
             labels={"aantal": "Aantal schadegevallen", "chauffeur": "Chauffeur", "status": "Status"},
         )
 
-        # Hovertemplate (enkel de juiste versie houden)
         fig.update_traces(
             customdata=plot_df[["badge", "status"]].to_numpy(),
             hovertemplate="<b>%{y}</b><br>"
@@ -509,7 +501,6 @@ with tab1:
                           "Status: %{customdata[0]}%{customdata[1]}<extra></extra>"
         )
 
-        # Layout: compacte marges, horizontale legenda bovenaan
         fig.update_layout(
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
             margin=dict(l=10, r=10, t=10, b=10),
@@ -518,12 +509,10 @@ with tab1:
 
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        # 4) Lijst per chauffeur (expanders) – badges voor de titel
+        # Lijst per chauffeur (expanders) – badges voor de titel
         st.subheader("📂 Schadegevallen per chauffeur")
-        # Gebruik dezelfde volgorde als de grafiek (van klein naar groot)
         ordered_names = plot_df["chauffeur"].tolist()
-
-        for chauffeur in ordered_names[::-1]:  # van groot -> klein voor prettige leeservaring
+        for chauffeur in ordered_names[::-1]:  # van groot -> klein
             aantal = int(chart_series.get(chauffeur, 0))
             status = status_van_chauffeur(chauffeur)
             badge = badge_van_status(status)
@@ -531,44 +520,22 @@ with tab1:
 
             with st.expander(titel):
                 schade_chauffeur = (
-                    df_filtered.loc[df_filtered["volledige naam"] == chauffeur, ["Datum", "Link"]]
+                    df_filtered.loc[
+                        df_filtered["volledige naam"] == chauffeur,
+                        ["Datum", "Link", "Bus/ Tram", "Locatie", "teamcoach"]
+                    ]
                     .sort_values(by="Datum")
                 )
                 for _, row in schade_chauffeur.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    link = row.get("Link") if "Link" in df_filtered.columns else None
+                    voertuig = row["Bus/ Tram"]; loc = row["Locatie"]; coach = row["teamcoach"]
+                    link = row.get("Link") if "Link" in schade_chauffeur.columns else None
+                    prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                     if isinstance(link, str) and link.startswith(("http://", "https://")):
-                        st.markdown(f"📅 {datum_str} — [🔗 Link]({link})", unsafe_allow_html=True)
+                        st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"📅 {datum_str} — ❌ Geen geldige link")
+                        st.markdown(prefix + "❌ Geen geldige link")
 
-# (Optioneel) verdere tabs tab2/tab3/tab4 kun je vullen met je bestaande of extra analyses
-with tab2:
-    st.subheader("Teamcoach overzicht")
-    coach_counts = (
-        df_filtered.groupby("teamcoach")["volledige naam"].count()
-        .rename("aantal").reset_index().sort_values("aantal", ascending=False)
-    )
-    st.bar_chart(coach_counts.set_index("teamcoach"), height=260)
-    st.dataframe(coach_counts, use_container_width=True)
-
-with tab3:
-    st.subheader("Voertuig overzicht")
-    veh_counts = (
-        df_filtered.groupby("Bus/ Tram")["volledige naam"].count()
-        .rename("aantal").reset_index().sort_values("aantal", ascending=False)
-    )
-    st.bar_chart(veh_counts.set_index("Bus/ Tram"), height=260)
-    st.dataframe(veh_counts, use_container_width=True)
-
-with tab4:
-    st.subheader("Locatie overzicht")
-    loc_counts = (
-        df_filtered.groupby("Locatie")["volledige naam"].count()
-        .rename("aantal").reset_index().sort_values("aantal", ascending=False)
-    )
-    st.bar_chart(loc_counts.set_index("Locatie"), height=260)
-    st.dataframe(loc_counts, use_container_width=True)
 
 
 
