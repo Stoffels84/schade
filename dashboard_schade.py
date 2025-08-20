@@ -507,17 +507,27 @@ with tab2:
 
         st.subheader("📂 Schadegevallen per teamcoach")
         for coach in chart_data.index.tolist():
-            cols = ["Datum", "volledige naam_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam_disp"]
-            schade_per_coach = df_filtered[df_filtered["teamcoach_disp"] == coach][cols].sort_values(by="Datum")
+            # Gebruik de DISPLAY-kolommen + voeg LOCATIE en VOERTUIG toe
+            base_cols = ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp"]
+            cols = base_cols + (["Link"] if "Link" in df_filtered.columns else [])
+            schade_per_coach = (
+                df_filtered[df_filtered["teamcoach_disp"] == coach][cols]
+                .sort_values(by="Datum")
+            )
             aantal = len(schade_per_coach)
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam_disp"]; link = row.get("Link")
+                    chauffeur = row["volledige naam_disp"]
+                    voertuig  = row["BusTram_disp"]
+                    locatie   = row["Locatie_disp"]
+                    prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
+                    link = row.get("Link") if "Link" in cols else None
                     if isinstance(link, str) and link.startswith(("http://", "https://")):
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
+                        st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+                        st.markdown(prefix + "❌ Geen geldige link")
+
 
 # ========= TAB 3: Voertuig =========
 with tab3:
