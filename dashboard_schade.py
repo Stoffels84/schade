@@ -46,6 +46,15 @@ def safe_name(x) -> str:
     s = "" if x is pd.NA else str(x or "").strip()
     return "onbekend" if s.lower() in {"nan", "none", ""} else s
 
+def _parse_excel_dates(series: pd.Series) -> pd.Series:
+    """Robuuste datumparser: probeer EU (dayfirst) en val terug op US (monthfirst)."""
+    d1 = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    need_retry = d1.isna()
+    if need_retry.any():
+        d2 = pd.to_datetime(series[need_retry], errors="coerce", dayfirst=False)
+        d1.loc[need_retry] = d2
+    return d1
+
 # ========= Kleuren =========
 COLOR_GEEL  = "#FFD54F"  # voltooide coaching
 COLOR_BLAUW = "#2196F3"  # in coaching
@@ -185,29 +194,21 @@ else:
 
 # ========= Data laden =========
 raw = load_excel("schade met macro.xlsm", sheet_name="BRON").copy()
-
-# ---- Kolomnamen trimmen
 raw.columns = raw.columns.str.strip()
-
-# ---- String-kolommen netjes
-def clean_str_col(s: pd.Series) -> pd.Series:
-    return s.astype("string").str.strip().replace({"": pd.NA})
-
 for col in ["volledige naam", "teamcoach", "Locatie", "Bus/ Tram"]:
     if col in raw.columns:
-        raw[col] = clean_str_col(raw[col])
+        raw[col] = raw[col].astype("string").str.strip().replace({"": pd.NA})
 
-# Teamcoach-opties uit RUWE data (volledige lijst)
-raw_tc = clean_str_col(raw.get("teamcoach", pd.Series(dtype="string")))
-teamcoach_options = sorted(pd.Series(raw_tc).dropna().unique().tolist())
+# --- df_for_options: ALLE rijen met geldige datum (voor kwartaal-lijst) ---
+df_for_options = raw.copy()
+df_for_options["Datum"] = _parse_excel_dates(df_for_options["Datum"])
+df_for_options = df_for_options[df_for_options["Datum"].notna()].copy()
+df_for_options["KwartaalP"] = df_for_options["Datum"].dt.to_period("Q")
 
-# ========= Opgeschoonde df voor analyses =========
+# --- df: opgeschoond voor analyses (filter op naam, geldige datum, enz.) ---
 df = raw.copy()
+df["Datum"] = _parse_excel_dates(df["Datum"])
 
-# Datum parsen
-df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce", dayfirst=True)
-
-# Geldige chauffeurs
 names = df["volledige naam"].astype("string")
 df = df[
     names.notna() &
@@ -215,14 +216,11 @@ df = df[
     (names != "9999 - -")
 ].copy()
 
-# Geldige datums
 df = df[df["Datum"].notna()].copy()
 
-# Afgeleide velden
 dn = df["volledige naam"].str.extract(r"^(\d+)", expand=False)
 df["dienstnummer"] = dn.astype("string").str.strip()
 
-# **Belangrijk**: gebruik Periods voor kwartaal-logica
 df["KwartaalP"] = df["Datum"].dt.to_period("Q")   # Period dtype
 df["Kwartaal"]  = df["KwartaalP"].astype(str)     # "YYYYQn" voor weergave
 
@@ -245,12 +243,14 @@ qp = st.query_params  # Streamlit 1.32+
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-# Opties
+# Opties (kwartaal uit df_for_options!)
 voertuig_options = sorted(df["Bus/ Tram"].dropna().unique().tolist())
 locatie_options  = sorted(df["Locatie"].dropna().unique().tolist())
-kwartaal_options = sorted(df["KwartaalP"].dropna().astype(str).unique().tolist())  # vanuit Periods!
+kwartaal_options = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
 
 # Prefs uit URL
+raw_tc = (raw.get("teamcoach") or pd.Series(dtype="string")).astype("string")
+teamcoach_options = sorted(pd.Series(raw_tc).dropna().unique().tolist())
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
 pref_vh = _clean_list(qp.get_all("voertuig"), voertuig_options) or voertuig_options
 pref_lo = _clean_list(qp.get_all("locatie"),  locatie_options)  or locatie_options
@@ -259,26 +259,10 @@ pref_kw = _clean_list(qp.get_all("kwartaal"), kwartaal_options)  or kwartaal_opt
 # ========= Sidebar filters =========
 with st.sidebar:
     st.header("🔍 Filters")
-    selected_teamcoaches = st.multiselect(
-        "Teamcoach",
-        options=teamcoach_options,
-        default=pref_tc
-    )
-    selected_voertuigen = st.multiselect(
-        "Voertuigtype",
-        options=voertuig_options,
-        default=pref_vh
-    )
-    selected_locaties = st.multiselect(
-        "Locatie",
-        options=locatie_options,
-        default=pref_lo
-    )
-    selected_kwartalen = st.multiselect(
-        "Kwartaal",
-        options=kwartaal_options,
-        default=pref_kw
-    )
+    selected_teamcoaches = st.multiselect("Teamcoach", options=teamcoach_options, default=pref_tc)
+    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
+    selected_locaties = st.multiselect("Locatie", options=locatie_options, default=pref_lo)
+    selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_options, default=pref_kw)
 
     # ====== Datum-bereik (automatisch afstemmen op kwartalen) ======
     st.markdown("### 🗓️ Datum")
@@ -301,7 +285,6 @@ with st.sidebar:
     else:
         date_from, date_to = min_d, max_d
 
-    # Safety: wissel om indien nodig
     if date_from > date_to:
         date_from, date_to = date_to, date_from
 
@@ -393,15 +376,13 @@ if generate_pdf:
     aantal_per_chauffeur = schade_pdf["volledige naam"].value_counts()
     elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
     for nm, count in aantal_per_chauffeur.items():
-        nm_disp = nm or "onbekend"
-        elements.append(Paragraph(f"- {nm_disp}: {count}", styles["Normal"]))
+        elements.append(Paragraph(f"- {safe_name(nm)}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
     aantal_per_locatie = schade_pdf["Locatie"].value_counts()
     elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
     for loc, count in aantal_per_locatie.items():
-        loc_disp = loc or "onbekend"
-        elements.append(Paragraph(f"- {loc_disp}: {count}", styles["Normal"]))
+        elements.append(Paragraph(f"- {safe_name(loc)}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
     chart_path = None
@@ -464,7 +445,6 @@ if generate_pdf:
     bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
     st.sidebar.download_button(label="📥 Download PDF", data=buffer, file_name=bestandsnaam, mime="application/pdf")
 
-    # opruimen temp chart-bestand
     if chart_path and os.path.exists(chart_path):
         try:
             os.remove(chart_path)
