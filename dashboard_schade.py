@@ -189,7 +189,7 @@ raw = load_excel("schade met macro.xlsm", sheet_name="BRON").copy()
 # ---- Kolomnamen trimmen
 raw.columns = raw.columns.str.strip()
 
-# ---- String-kolommen netjes (string-dtype houdt <NA> intact; geen "nan"-strings)
+# ---- String-kolommen netjes
 def clean_str_col(s: pd.Series) -> pd.Series:
     return s.astype("string").str.strip().replace({"": pd.NA})
 
@@ -204,10 +204,10 @@ teamcoach_options = sorted(pd.Series(raw_tc).dropna().unique().tolist())
 # ========= Opgeschoonde df voor analyses =========
 df = raw.copy()
 
-# Datum eenduidig parsen en daarna pas droppen
+# Datum parsen
 df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce", dayfirst=True)
 
-# Geldige chauffeursnamen behouden (verwijder NA, 'nan', 'none', lege, placeholder)
+# Geldige chauffeurs
 names = df["volledige naam"].astype("string")
 df = df[
     names.notna() &
@@ -215,13 +215,16 @@ df = df[
     (names != "9999 - -")
 ].copy()
 
-# Alleen rijen met geldige datums
+# Geldige datums
 df = df[df["Datum"].notna()].copy()
 
 # Afgeleide velden
 dn = df["volledige naam"].str.extract(r"^(\d+)", expand=False)
 df["dienstnummer"] = dn.astype("string").str.strip()
-df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
+
+# **Belangrijk**: gebruik Periods voor kwartaal-logica
+df["KwartaalP"] = df["Datum"].dt.to_period("Q")   # Period dtype
+df["Kwartaal"]  = df["KwartaalP"].astype(str)     # "YYYYQn" voor weergave
 
 # ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
@@ -242,14 +245,13 @@ qp = st.query_params  # Streamlit 1.32+
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-# Teamcoach-opties: alleen geldige waarden
-pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
-
-# Voertuig/locatie/kwartaal opties uit opgeschoonde df
+# Opties
 voertuig_options = sorted(df["Bus/ Tram"].dropna().unique().tolist())
 locatie_options  = sorted(df["Locatie"].dropna().unique().tolist())
-kwartaal_options = sorted(df["Kwartaal"].dropna().unique().tolist())
+kwartaal_options = sorted(df["KwartaalP"].dropna().astype(str).unique().tolist())  # vanuit Periods!
 
+# Prefs uit URL
+pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
 pref_vh = _clean_list(qp.get_all("voertuig"), voertuig_options) or voertuig_options
 pref_lo = _clean_list(qp.get_all("locatie"),  locatie_options)  or locatie_options
 pref_kw = _clean_list(qp.get_all("kwartaal"), kwartaal_options)  or kwartaal_options
@@ -262,31 +264,26 @@ with st.sidebar:
         options=teamcoach_options,
         default=pref_tc
     )
-
     selected_voertuigen = st.multiselect(
         "Voertuigtype",
         options=voertuig_options,
         default=pref_vh
     )
-
     selected_locaties = st.multiselect(
         "Locatie",
         options=locatie_options,
         default=pref_lo
     )
-
     selected_kwartalen = st.multiselect(
         "Kwartaal",
         options=kwartaal_options,
-        default=pref_kw,
-        help="Tip: zet hieronder ‘Periode afstemmen…’ aan om het datumbereik automatisch op deze kwartalen te zetten."
+        default=pref_kw
     )
 
-    # ====== Datum-bereik (met optionele auto-sync naar kwartalen) ======
+    # ====== Datum-bereik (automatisch afstemmen op kwartalen) ======
     st.markdown("### 🗓️ Datum")
 
-    def _quarter_bounds(q_list: list[str]) -> tuple | None:
-        # verwacht strings als '2024Q2'
+    def _quarter_bounds(q_list: list[str]):
         if not q_list:
             return None
         try:
@@ -296,40 +293,17 @@ with st.sidebar:
             return None
 
     min_d, max_d = df["Datum"].min().date(), df["Datum"].max().date()
+    sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
     q_bounds = _quarter_bounds(selected_kwartalen)
 
-    auto_sync = st.checkbox(
-        "Periode afstemmen op gekozen kwartalen",
-        value=True,
-        help="Schakel uit als je handmatig een eigen datumbereik wilt kiezen."
-    )
-
-    if auto_sync and q_bounds:
-        # Stel periode automatisch op basis van kwartalen
+    if q_bounds:
         date_from, date_to = q_bounds
-        # Toon het bereik ter info
-        st.caption(f"Periode: {date_from.strftime('%d-%m-%Y')} t/m {date_to.strftime('%d-%m-%Y')}")
     else:
-        date_from, date_to = st.date_input(
-            "Periode",
-            value=(min_d, max_d),
-            min_value=min_d,
-            max_value=max_d
-        )
-        if isinstance(date_from, tuple):  # oudere Streamlit versies kunnen tuple teruggeven
-            date_from, date_to = date_from
+        date_from, date_to = min_d, max_d
 
-    # Safety: omwisselen als gebruiker per ongeluk van > tot kiest
+    # Safety: wissel om indien nodig
     if date_from > date_to:
         date_from, date_to = date_to, date_from
-        st.info("Je datums zijn omgewisseld (van > tot).")
-
-    # Waarschuwing als kwartalen buiten het gekozen bereik vallen (alleen wanneer auto_sync uit staat)
-    if (not auto_sync) and (q_bounds is not None) and not (date_from <= q_bounds[1] and date_to >= q_bounds[0]):
-        st.warning(
-            "De gekozen periode sluit (een deel van) de geselecteerde kwartalen uit. "
-            "Zet ‘Periode afstemmen op gekozen kwartalen’ aan of pas het datumbereik aan."
-        )
 
     colA, colB = st.columns(2)
     with colA:
@@ -350,7 +324,7 @@ mask = (
     df["teamcoach"].isin(selected_teamcoaches) &
     df["Bus/ Tram"].isin(selected_voertuigen) &
     df["Locatie"].isin(selected_locaties) &
-    df["Kwartaal"].isin(selected_kwartalen)
+    (df["KwartaalP"].isin(sel_periods) if len(sel_periods) > 0 else True)
 )
 df_filtered = df[mask].copy()
 
@@ -501,7 +475,6 @@ if generate_pdf:
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
 
-    # Altijd alle chauffeurs; filter missings defensief (mocht er iets doorheen glippen)
     names = df_filtered["volledige naam"].astype("string")
     mask_valid = names.notna() & (~names.str.lower().isin({"nan", "none", ""}))
     chart_series = names[mask_valid].value_counts()
@@ -509,18 +482,13 @@ with tab1:
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Dataframe voor plotly
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        # Status + badge
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
-        # Sorteer oplopend zodat horizontale bars van klein -> groot lopen
         plot_df = plot_df.sort_values("aantal", ascending=True, kind="stable")
 
-        # Legenda
         st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
 
-        # Plotly grafiek
         color_map = {"Voltooid": COLOR_GEEL, "Coaching": COLOR_BLAUW, "Beide": COLOR_MIX, "Geen": COLOR_GRIJS}
         fig = px.bar(
             plot_df, x="aantal", y="chauffeur", color="status", orientation="h",
@@ -539,20 +507,21 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        # Lijst per chauffeur (expanders)
         st.subheader("📂 Schadegevallen per chauffeur")
-        ordered_names = [safe_name(x) for x in plot_df["chauffeur"].tolist()]
-        for chauffeur in ordered_names[::-1]:  # van groot -> klein
-            aantal = int(chart_series.get(chauffeur, 0))
-            status = status_van_chauffeur(chauffeur)
-            badge = badge_van_status(status)
-            titel = f"{badge}{chauffeur} — {aantal} schadegevallen"
+        ordered = plot_df[["chauffeur","aantal"]].sort_values("aantal").to_dict("records")
+        for rec in reversed(ordered):
+            chauffeur_key = rec["chauffeur"]
+            display_label = safe_name(chauffeur_key)
+            aantal = int(rec["aantal"])
+            status = status_van_chauffeur(chauffeur_key)
+            badge  = badge_van_status(status)
+            titel  = f"{badge}{display_label} — {aantal} schadegevallen"
 
             with st.expander(titel):
                 cols = ["Datum", "Bus/ Tram", "Locatie", "teamcoach"]
                 if "Link" in df_filtered.columns:
                     cols = ["Datum", "Link", "Bus/ Tram", "Locatie", "teamcoach"]
-                schade_chauffeur = df_filtered.loc[df_filtered["volledige naam"] == chauffeur, cols].sort_values(by="Datum")
+                schade_chauffeur = df_filtered.loc[df_filtered["volledige naam"] == chauffeur_key, cols].sort_values(by="Datum")
                 for _, row in schade_chauffeur.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
                     voertuig = row["Bus/ Tram"]; loc = row["Locatie"]; coach = row["teamcoach"]
@@ -641,7 +610,6 @@ with tab3:
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
 
-    # Altijd alle locaties (geen top-filter)
     chart_data = df_filtered["Locatie"].value_counts()
 
     if chart_data.empty:
