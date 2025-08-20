@@ -609,31 +609,41 @@ with tab3:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
 
 # ========= TAB 4: Locatie =========
+# ========= TAB 4: Locatie =========
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
-    top_locatie_option = st.selectbox("Toon top aantal locaties:", ["10", "20", "50", "Allemaal"])
+
+    # Toon altijd alle locaties (geen top-filter meer)
     chart_data = df_filtered["Locatie"].value_counts()
-    if top_locatie_option != "Allemaal":
-        chart_data = chart_data.head(int(top_locatie_option))
 
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Dynamische hoogte zodat lange lijsten leesbaar blijven
         fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
         chart_data.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Aantal schadegevallen"); ax.set_ylabel("Locatie")
-        ax.set_title("Top " + top_locatie_option + " schadegevallen per locatie" if top_locatie_option != "Allemaal" else "Schadegevallen per locatie")
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Locatie")
+        ax.set_title("Schadegevallen per locatie")
         st.pyplot(fig)
 
         st.subheader("📂 Schadegevallen per locatie")
         for locatie in chart_data.index.tolist():
-            schade_per_locatie = df_filtered[df_filtered["Locatie"] == locatie][["Datum", "Link", "volledige naam"]].sort_values(by="Datum")
+            schade_per_locatie = (
+                df_filtered[df_filtered["Locatie"] == locatie]
+                [["Datum", "volledige naam", "Bus/ Tram", "teamcoach", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam", "Bus/ Tram", "teamcoach"]]
+                .sort_values(by="Datum")
+            )
             aantal = len(schade_per_locatie)
             with st.expander(f"{locatie} — {aantal} schadegevallen"):
                 for _, row in schade_per_locatie.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam"]; link = row["Link"]
+                    chauffeur = row["volledige naam"]
+                    voertuig  = row["Bus/ Tram"]
+                    coach     = row["teamcoach"]
+                    prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
+                    link = row.get("Link") if "Link" in schade_per_locatie.columns else None
                     if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
+                        st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+                        st.markdown(prefix + "❌ Geen geldige link")
