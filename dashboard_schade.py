@@ -275,9 +275,16 @@ with st.sidebar:
         date_from = df["Datum"].min().date()
         date_to   = df["Datum"].max().date()
 
-     if st.button("🔄 Reset filters"):
+# In de sidebar...
+with st.sidebar:
+    st.header("🔍 Filters")
+    # ... al je multiselects en datumcode ...
+
+    # Alleen nog reset-knop, zonder colA/colB
+    if st.button("🔄 Reset filters"):
         qp.clear()
         st.rerun()
+
 
 
 # ========= Filters toepassen =========
