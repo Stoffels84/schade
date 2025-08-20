@@ -35,7 +35,6 @@ def load_excel(path, **kwargs):
         st.stop()
 
     def naam_naar_dn(naam: str) -> str | None:
-
 def toon_chauffeur(x):
     """Geef nette chauffeur-naam terug, met fallback.
     Knipt vooraan '1234 - ' weg als dat aanwezig is.
