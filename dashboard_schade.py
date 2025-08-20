@@ -34,7 +34,7 @@ def load_excel(path, **kwargs):
         st.error(f"Kon '{path}' niet lezen: {e}")
         st.stop()
 
-def naam_naar_dn(naam: str) -> str | None:
+    def naam_naar_dn(naam: str) -> str | None:
 
 def toon_chauffeur(x):
     if x is None or pd.isna(x):
