@@ -34,11 +34,17 @@ def load_excel(path, **kwargs):
         st.error(f"Kon '{path}' niet lezen: {e}")
         st.stop()
 
-    def naam_naar_dn(naam: str) -> str | None:
-    def toon_chauffeur(x):
-    """Geef nette chauffeur-naam terug, met fallback.
-    Knipt vooraan '1234 - ' weg als dat aanwezig is.
-    """
+def naam_naar_dn(naam: str) -> str | None:
+    """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
+    if pd.isna(naam):
+        return None
+    s = str(naam).strip()
+    m = re.match(r"\s*(\d+)", s)
+    return m.group(1) if m else None
+
+
+def toon_chauffeur(x):
+    """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
     if x is None or pd.isna(x):
         return "onbekend"
 
@@ -49,6 +55,7 @@ def load_excel(path, **kwargs):
     # strip '1234 - ' of '1234-'
     s = re.sub(r"^\s*\d+\s*-\s*", "", s)
     return s
+
 
 
     
