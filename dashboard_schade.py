@@ -92,15 +92,18 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
 
     def haal_ids(sheetnaam):
-        df = pd.read_excel(xls, sheet_name=sheetnaam)
-        df.columns = df.columns.str.strip().str.lower()
+        dfc = pd.read_excel(xls, sheet_name=sheetnaam)
+        dfc.columns = dfc.columns.str.strip().str.lower()
         kol = None
         for k in ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]:
-            if k in df.columns:
+            if k in dfc.columns:
                 kol = k; break
         if kol is None:
             return set()
-        return set(df[kol].astype(str).str.extract(r"(\d+)", expand=False).dropna().str.strip().tolist())
+        return set(
+            dfc[kol].astype(str).str.extract(r"(\d+)", expand=False)
+            .dropna().str.strip().tolist()
+        )
 
     s_geel = vind_sheet(xls, "voltooide coachings")
     s_blauw = vind_sheet(xls, "coaching")
@@ -195,34 +198,33 @@ else:
 # ========= Data laden =========
 raw = load_excel("schade met macro.xlsm", sheet_name="BRON").copy()
 raw.columns = raw.columns.str.strip()
-for col in ["volledige naam", "teamcoach", "Locatie", "Bus/ Tram"]:
-    if col in raw.columns:
-        raw[col] = raw[col].astype("string").str.strip().replace({"": pd.NA})
 
-# --- df_for_options: ALLE rijen met geldige datum (voor kwartaal-lijst) ---
-df_for_options = raw.copy()
-df_for_options["Datum"] = _parse_excel_dates(df_for_options["Datum"])
-df_for_options = df_for_options[df_for_options["Datum"].notna()].copy()
+# -- parse datums robuust
+raw["Datum"] = _parse_excel_dates(raw["Datum"])
+
+# -- normaliseer relevante kolommen (als string; nog NIET filteren op leeg)
+for col in ["volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"]:
+    if col in raw.columns:
+        raw[col] = raw[col].astype("string").str.strip()
+
+# --- df_for_options: ALLE rijen met geldige datum (voor kwartaal-lijst)
+df_for_options = raw[raw["Datum"].notna()].copy()
 df_for_options["KwartaalP"] = df_for_options["Datum"].dt.to_period("Q")
 
-# --- df: opgeschoond voor analyses (filter op naam, geldige datum, enz.) ---
-df = raw.copy()
-df["Datum"] = _parse_excel_dates(df["Datum"])
+# --- df: analyses (alleen datums moeten geldig zijn; lege velden worden 'onbekend')
+df = raw[raw["Datum"].notna()].copy()
 
-names = df["volledige naam"].astype("string")
-df = df[
-    names.notna() &
-    (~names.str.lower().isin({"nan", "none", ""})) &
-    (names != "9999 - -")
-].copy()
+# Display-kolommen met 'onbekend'
+df["volledige naam_disp"] = df["volledige naam"].apply(safe_name)
+df["teamcoach_disp"]      = df["teamcoach"].apply(safe_name)
+df["Locatie_disp"]        = df["Locatie"].apply(safe_name)
+df["BusTram_disp"]        = df["Bus/ Tram"].apply(safe_name)
 
-df = df[df["Datum"].notna()].copy()
-
-dn = df["volledige naam"].str.extract(r"^(\d+)", expand=False)
+# Overige afgeleiden
+dn = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False)
 df["dienstnummer"] = dn.astype("string").str.strip()
-
-df["KwartaalP"] = df["Datum"].dt.to_period("Q")   # Period dtype
-df["Kwartaal"]  = df["KwartaalP"].astype(str)     # "YYYYQn" voor weergave
+df["KwartaalP"]    = df["Datum"].dt.to_period("Q")
+df["Kwartaal"]     = df["KwartaalP"].astype(str)
 
 # ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
@@ -230,80 +232,48 @@ if coach_warn:
     st.sidebar.warning(f"⚠️ {coach_warn}")
 
 # Flags op df (optioneel)
-df["gecoacht_geel"] = df["dienstnummer"].astype(str).isin(gecoachte_ids)
+df["gecoacht_geel"]  = df["dienstnummer"].astype(str).isin(gecoachte_ids)
 df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
 st.caption("🟡 = voltooide coaching · 🔵 = in coaching (lopend)")
 
-# ========= Query params presets (LEZEN) =========
+# ========= Query params presets =========
 qp = st.query_params  # Streamlit 1.32+
 
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-# Opties (kwartaal uit df_for_options!)
-voertuig_options = sorted(df["Bus/ Tram"].dropna().unique().tolist())
-locatie_options  = sorted(df["Locatie"].dropna().unique().tolist())
-kwartaal_options = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
+# Opties (komen uit display-kolommen zodat 'onbekend' selecteerbaar is)
+teamcoach_options = sorted(df["teamcoach_disp"].dropna().unique().tolist())
+locatie_options   = sorted(df["Locatie_disp"].dropna().unique().tolist())
+voertuig_options  = sorted(df["BusTram_disp"].dropna().unique().tolist())
+kwartaal_options  = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
 
 # Prefs uit URL
-# Teamcoach-opties robuust ophalen (zonder booleaanse 'or' op Series)
-if "teamcoach" in raw.columns:
-    raw_tc = raw["teamcoach"].astype("string")
-else:
-    raw_tc = pd.Series(dtype="string")
-
-teamcoach_options = (
-    pd.Series(raw_tc)
-      .dropna()
-      .astype("string")
-      .str.strip()
-      .replace({"": pd.NA})
-      .dropna()
-      .unique()
-      .tolist()
-)
-teamcoach_options = sorted(teamcoach_options)
-
-teamcoach_options = sorted(pd.Series(raw_tc).dropna().unique().tolist())
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
-pref_vh = _clean_list(qp.get_all("voertuig"), voertuig_options) or voertuig_options
 pref_lo = _clean_list(qp.get_all("locatie"),  locatie_options)  or locatie_options
-pref_kw = _clean_list(qp.get_all("kwartaal"), kwartaal_options)  or kwartaal_options
+pref_vh = _clean_list(qp.get_all("voertuig"),  voertuig_options) or voertuig_options
+pref_kw = _clean_list(qp.get_all("kwartaal"),  kwartaal_options)  or kwartaal_options
 
 # ========= Sidebar filters =========
 with st.sidebar:
     st.header("🔍 Filters")
     selected_teamcoaches = st.multiselect("Teamcoach", options=teamcoach_options, default=pref_tc)
-    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
-    selected_locaties = st.multiselect("Locatie", options=locatie_options, default=pref_lo)
-    selected_kwartalen = st.multiselect("Kwartaal", options=kwartaal_options, default=pref_kw)
+    selected_locaties    = st.multiselect("Locatie", options=locatie_options, default=pref_lo)
+    selected_voertuigen  = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
+    selected_kwartalen   = st.multiselect("Kwartaal", options=kwartaal_options, default=pref_kw)
 
-    # ====== Datum-bereik (automatisch afstemmen op kwartalen) ======
+    # Datum-bereik = gekozen kwartalen, anders volledige range
     st.markdown("### 🗓️ Datum")
-
-    def _quarter_bounds(q_list: list[str]):
-        if not q_list:
-            return None
-        try:
-            qidx = pd.PeriodIndex(q_list, freq="Q")
-            return qidx.start_time.min().date(), qidx.end_time.max().date()
-        except Exception:
-            return None
-
-    min_d, max_d = df["Datum"].min().date(), df["Datum"].max().date()
-    sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
-    q_bounds = _quarter_bounds(selected_kwartalen)
-
-    if q_bounds:
-        date_from, date_to = q_bounds
+    if selected_kwartalen:
+        sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
+        date_from = sel_periods_idx.start_time.min().date()
+        date_to   = sel_periods_idx.end_time.max().date()
     else:
-        date_from, date_to = min_d, max_d
-
-    if date_from > date_to:
-        date_from, date_to = date_to, date_from
+        date_from = df["Datum"].min().date()
+        date_to   = df["Datum"].max().date()
 
     colA, colB = st.columns(2)
     with colA:
@@ -314,16 +284,18 @@ with st.sidebar:
         if st.button("🔖 Bewaar filters in URL"):
             qp.clear()
             qp["teamcoach"] = selected_teamcoaches
-            qp["voertuig"]  = selected_voertuigen
             qp["locatie"]   = selected_locaties
+            qp["voertuig"]  = selected_voertuigen
             qp["kwartaal"]  = selected_kwartalen
             st.success("Link met filters staat nu in de adresbalk. Kopieer & deel!")
 
 # ========= Filters toepassen =========
+sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
+
 mask = (
-    df["teamcoach"].isin(selected_teamcoaches) &
-    df["Bus/ Tram"].isin(selected_voertuigen) &
-    df["Locatie"].isin(selected_locaties) &
+    df["teamcoach_disp"].isin(selected_teamcoaches) &
+    df["Locatie_disp"].isin(selected_locaties) &
+    df["BusTram_disp"].isin(selected_voertuigen) &
     (df["KwartaalP"].isin(sel_periods) if len(sel_periods) > 0 else True)
 )
 df_filtered = df[mask].copy()
@@ -361,11 +333,11 @@ pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options
 generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
-    kolommen_pdf = ["Datum", "volledige naam", "Locatie", "Bus/ Tram"]
+    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
     if "Link" in df.columns:
         kolommen_pdf.append("Link")
 
-    schade_pdf = df_filtered[df_filtered["teamcoach"] == pdf_coach][kolommen_pdf].copy()
+    schade_pdf = df_filtered[df_filtered["teamcoach_disp"] == pdf_coach][kolommen_pdf].copy()
     schade_pdf = schade_pdf.sort_values(by="Datum")
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
@@ -386,17 +358,17 @@ if generate_pdf:
         laatste_datum = schade_pdf["Datum"].max().strftime("%d-%m-%Y")
         elements.append(Paragraph("📊 Samenvatting:", styles["Heading2"]))
         elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
-        elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam'].nunique()}", styles["Normal"]))
-        elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie'].nunique()}", styles["Normal"]))
+        elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam_disp'].nunique()}", styles["Normal"]))
+        elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
         elements.append(Spacer(1, 12))
 
-    aantal_per_chauffeur = schade_pdf["volledige naam"].value_counts()
+    aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
     elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
     for nm, count in aantal_per_chauffeur.items():
         elements.append(Paragraph(f"- {safe_name(nm)}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
-    aantal_per_locatie = schade_pdf["Locatie"].value_counts()
+    aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
     elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
     for loc, count in aantal_per_locatie.items():
         elements.append(Paragraph(f"- {safe_name(loc)}: {count}", styles["Normal"]))
@@ -434,9 +406,7 @@ if generate_pdf:
     tabel_data = [kol_head]
     for _, row in schade_pdf.iterrows():
         datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-        nm = (row["volledige naam"] or "onbekend")
-        voertuig = (row["Bus/ Tram"] or "onbekend")
-        locatie = (row["Locatie"] or "onbekend")
+        nm = row["volledige naam_disp"]; voertuig = row["BusTram_disp"]; locatie = row["Locatie_disp"]
         rij = [datum, nm, voertuig, locatie]
         if heeft_link:
             link = row.get("Link")
@@ -472,10 +442,7 @@ if generate_pdf:
 with tab1:
     st.subheader("Aantal schadegevallen per chauffeur")
 
-    names = df_filtered["volledige naam"].astype("string")
-    mask_valid = names.notna() & (~names.str.lower().isin({"nan", "none", ""}))
-    chart_series = names[mask_valid].value_counts()
-
+    chart_series = df_filtered["volledige naam_disp"].value_counts()
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
@@ -507,23 +474,20 @@ with tab1:
         st.subheader("📂 Schadegevallen per chauffeur")
         ordered = plot_df[["chauffeur","aantal"]].sort_values("aantal").to_dict("records")
         for rec in reversed(ordered):
-            chauffeur_key = rec["chauffeur"]
-            display_label = safe_name(chauffeur_key)
+            chauffeur_label = rec["chauffeur"]
             aantal = int(rec["aantal"])
-            status = status_van_chauffeur(chauffeur_key)
+            status = status_van_chauffeur(chauffeur_label)
             badge  = badge_van_status(status)
-            titel  = f"{badge}{display_label} — {aantal} schadegevallen"
+            titel  = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
 
             with st.expander(titel):
-                cols = ["Datum", "Bus/ Tram", "Locatie", "teamcoach"]
-                if "Link" in df_filtered.columns:
-                    cols = ["Datum", "Link", "Bus/ Tram", "Locatie", "teamcoach"]
-                schade_chauffeur = df_filtered.loc[df_filtered["volledige naam"] == chauffeur_key, cols].sort_values(by="Datum")
+                cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                schade_chauffeur = df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols].sort_values(by="Datum")
                 for _, row in schade_chauffeur.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    voertuig = row["Bus/ Tram"]; loc = row["Locatie"]; coach = row["teamcoach"]
-                    link = row.get("Link") if "Link" in schade_chauffeur.columns else None
+                    voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
                     prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                    link = row.get("Link") if "Link" in cols else None
                     if isinstance(link, str) and link.startswith(("http://", "https://")):
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
@@ -532,7 +496,7 @@ with tab1:
 # ========= TAB 2: Teamcoach =========
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
-    chart_data = df_filtered["teamcoach"].value_counts()
+    chart_data = df_filtered["teamcoach_disp"].value_counts()
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
@@ -545,16 +509,14 @@ with tab2:
 
         st.subheader("📂 Schadegevallen per teamcoach")
         for coach in chart_data.index.tolist():
-            cols = ["Datum", "volledige naam"]
-            if "Link" in df_filtered.columns:
-                cols.append("Link")
-            schade_per_coach = df_filtered[df_filtered["teamcoach"] == coach][cols].sort_values(by="Datum")
+            cols = ["Datum", "volledige naam_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam_disp"]
+            schade_per_coach = df_filtered[df_filtered["teamcoach_disp"] == coach][cols].sort_values(by="Datum")
             aantal = len(schade_per_coach)
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam"]; link = row.get("Link")
-                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                    chauffeur = row["volledige naam_disp"]; link = row.get("Link")
+                    if isinstance(link, str) and link.startswith(("http://", "https://")):
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
@@ -566,7 +528,7 @@ with tab3:
     maanden_nl = {1:"januari",2:"februari",3:"maart",4:"april",5:"mei",6:"juni",7:"juli",8:"augustus",9:"september",10:"oktober",11:"november",12:"december"}
     df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower()
     maand_volgorde = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"]
-    groep = df_per_maand.groupby(["Maand", "Bus/ Tram"]).size().unstack(fill_value=0)
+    groep = df_per_maand.groupby(["Maand", "BusTram_disp"]).size().unstack(fill_value=0)
     groep = groep.reindex(maand_volgorde)
 
     fig2, ax2 = plt.subplots(figsize=(10, 4))
@@ -577,7 +539,7 @@ with tab3:
     st.pyplot(fig2)
 
     st.subheader("Aantal schadegevallen per type voertuig")
-    chart_data = df_filtered["Bus/ Tram"].value_counts()
+    chart_data = df_filtered["BusTram_disp"].value_counts()
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
@@ -589,16 +551,14 @@ with tab3:
 
         st.subheader("📂 Schadegevallen per voertuigtype")
         for voertuig in chart_data.index.tolist():
-            cols = ["Datum", "volledige naam"]
-            if "Link" in df_filtered.columns:
-                cols.append("Link")
-            schade_per_voertuig = df_filtered[df_filtered["Bus/ Tram"] == voertuig][cols].sort_values(by="Datum")
+            cols = ["Datum", "volledige naam_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam_disp"]
+            schade_per_voertuig = df_filtered[df_filtered["BusTram_disp"] == voertuig][cols].sort_values(by="Datum")
             aantal = len(schade_per_voertuig)
             with st.expander(f"{voertuig} — {aantal} schadegevallen"):
                 for _, row in schade_per_voertuig.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam"]; link = row.get("Link")
-                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                    chauffeur = row["volledige naam_disp"]; link = row.get("Link")
+                    if isinstance(link, str) and link.startswith(("http://", "https://")):
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
@@ -607,8 +567,7 @@ with tab3:
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
 
-    chart_data = df_filtered["Locatie"].value_counts()
-
+    chart_data = df_filtered["Locatie_disp"].value_counts()
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
@@ -621,20 +580,18 @@ with tab4:
 
         st.subheader("📂 Schadegevallen per locatie")
         for locatie in chart_data.index.tolist():
-            cols = ["Datum", "volledige naam", "Bus/ Tram", "teamcoach"]
-            if "Link" in df_filtered.columns:
-                cols.append("Link")
-            schade_per_locatie = df_filtered[df_filtered["Locatie"] == locatie][cols].sort_values(by="Datum")
+            cols = ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
+            schade_per_locatie = df_filtered[df_filtered["Locatie_disp"] == locatie][cols].sort_values(by="Datum")
             aantal = len(schade_per_locatie)
             with st.expander(f"{locatie} — {aantal} schadegevallen"):
                 for _, row in schade_per_locatie.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam"]
-                    voertuig  = row["Bus/ Tram"]
-                    coach     = row["teamcoach"]
+                    chauffeur = row["volledige naam_disp"]
+                    voertuig  = row["BusTram_disp"]
+                    coach     = row["teamcoach_disp"]
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
-                    link = row.get("Link") if "Link" in schade_per_locatie.columns else None
-                    if pd.notna(link) and isinstance(link, str) and link.startswith(("http://", "https://")):
+                    link = row.get("Link") if "Link" in cols else None
+                    if isinstance(link, str) and link.startswith(("http://", "https://")):
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(prefix + "❌ Geen geldige link")
