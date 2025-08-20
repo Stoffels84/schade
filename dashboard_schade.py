@@ -242,7 +242,7 @@ qp = st.query_params  # Streamlit 1.32+
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-# Teamcoach presets: alleen geldige waarden
+# Teamcoach-opties: alleen geldige waarden
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
 
 # Voertuig/locatie/kwartaal opties uit opgeschoonde df
@@ -278,20 +278,58 @@ with st.sidebar:
     selected_kwartalen = st.multiselect(
         "Kwartaal",
         options=kwartaal_options,
-        default=pref_kw
+        default=pref_kw,
+        help="Tip: zet hieronder ‘Periode afstemmen…’ aan om het datumbereik automatisch op deze kwartalen te zetten."
     )
 
-    # 🗓️ Datum-bereik filter
+    # ====== Datum-bereik (met optionele auto-sync naar kwartalen) ======
     st.markdown("### 🗓️ Datum")
+
+    def _quarter_bounds(q_list: list[str]) -> tuple | None:
+        # verwacht strings als '2024Q2'
+        if not q_list:
+            return None
+        try:
+            qidx = pd.PeriodIndex(q_list, freq="Q")
+            return qidx.start_time.min().date(), qidx.end_time.max().date()
+        except Exception:
+            return None
+
     min_d, max_d = df["Datum"].min().date(), df["Datum"].max().date()
-    date_from, date_to = st.date_input(
-        "Periode",
-        value=(min_d, max_d),
-        min_value=min_d,
-        max_value=max_d
+    q_bounds = _quarter_bounds(selected_kwartalen)
+
+    auto_sync = st.checkbox(
+        "Periode afstemmen op gekozen kwartalen",
+        value=True,
+        help="Schakel uit als je handmatig een eigen datumbereik wilt kiezen."
     )
-    if isinstance(date_from, tuple):
-        date_from, date_to = date_from
+
+    if auto_sync and q_bounds:
+        # Stel periode automatisch op basis van kwartalen
+        date_from, date_to = q_bounds
+        # Toon het bereik ter info
+        st.caption(f"Periode: {date_from.strftime('%d-%m-%Y')} t/m {date_to.strftime('%d-%m-%Y')}")
+    else:
+        date_from, date_to = st.date_input(
+            "Periode",
+            value=(min_d, max_d),
+            min_value=min_d,
+            max_value=max_d
+        )
+        if isinstance(date_from, tuple):  # oudere Streamlit versies kunnen tuple teruggeven
+            date_from, date_to = date_from
+
+    # Safety: omwisselen als gebruiker per ongeluk van > tot kiest
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+        st.info("Je datums zijn omgewisseld (van > tot).")
+
+    # Waarschuwing als kwartalen buiten het gekozen bereik vallen (alleen wanneer auto_sync uit staat)
+    if (not auto_sync) and (q_bounds is not None) and not (date_from <= q_bounds[1] and date_to >= q_bounds[0]):
+        st.warning(
+            "De gekozen periode sluit (een deel van) de geselecteerde kwartalen uit. "
+            "Zet ‘Periode afstemmen op gekozen kwartalen’ aan of pas het datumbereik aan."
+        )
 
     colA, colB = st.columns(2)
     with colA:
