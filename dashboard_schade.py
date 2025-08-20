@@ -149,7 +149,17 @@ if missend:
     st.stop()
 
 df = df[df["volledige naam"].notna() & (df["volledige naam"] != "9999 - -")].copy()
-df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
+
+# ========= Datumkolom netjes inlezen =========
+if not pd.api.types.is_datetime64_any_dtype(df["Datum"]):
+    # Strings of getallen → converteren met dag-eerst
+    df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce", dayfirst=True)
+else:
+    # Als Excel de kolom al als datetime inleest
+    df["Datum"] = pd.to_datetime(df["Datum"], errors="coerce")
+
+
+
 df = df[df["Datum"].notna()].copy()
 df["Kwartaal"] = df["Datum"].dt.to_period("Q").astype(str)
 df["dienstnummer"] = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype(str).str.strip()
