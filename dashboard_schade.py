@@ -783,7 +783,6 @@ with tab4:
 with tab5:
     st.subheader("📈 Pareto-analyse (80/20)")
 
-    # Kies de dimensie
     dim_opties = {
         "Chauffeur": "volledige naam_disp",
         "Locatie": "Locatie_disp",
@@ -796,7 +795,6 @@ with tab5:
     if kol not in df_filtered.columns or df_filtered.empty:
         st.info("Geen data om te tonen voor deze selectie.")
     else:
-        # Volledige telling (aflopend) voor cumulatieve lijn en 80%-punt
         counts_all = df_filtered[kol].value_counts()
         max_n = int(len(counts_all))
         if max_n == 0:
@@ -805,59 +803,54 @@ with tab5:
             totaal = int(counts_all.sum())
             cum_share = (counts_all.cumsum() / totaal)
 
-            # Vind eerste categorie waar ≥80% bereikt wordt
+            # 80%-punt
             mask80 = cum_share.ge(0.80)
             if mask80.any():
-                idx80_label = mask80.idxmax()                        # label (bv. chauffeur)
-                k80 = int(counts_all.index.get_loc(idx80_label))     # positie (0-based)
+                idx80_label = mask80.idxmax()
+                k80 = int(counts_all.index.get_loc(idx80_label))
                 cum80 = float(cum_share.loc[idx80_label])
             else:
                 idx80_label = counts_all.index[-1]
                 k80 = max_n - 1
                 cum80 = float(cum_share.iloc[-1])
 
-            # --- Robuuste Top-N slider ---
+            # Robuuste Top-N slider
             min_n = 1
-            hard_cap = 200                      # UI-vriendelijk; zet op max_n als je altijd alles wil tonen
+            hard_cap = 200
             max_slider = min(hard_cap, max_n)
             default_n = min(20, max_slider)
             top_n = st.slider("Toon top N", min_value=min_n, max_value=max_slider, value=default_n, step=1)
-
             counts_top = counts_all.head(top_n)
 
-            # --- Plotly grafiek ---
             import plotly.graph_objects as go
             fig = go.Figure()
 
-            # Staafjes = Top N
+            # Bars (Top N) — hover accuraat
             fig.add_bar(
                 x=counts_top.index,
                 y=counts_top.values,
                 name="Aantal schades",
-                hovertemplate=f"{dim_keuze}: %{ { 'x' } }<br>Aantal: %{ { 'y' } }<extra></extra>"
+                hovertemplate=f"{dim_keuze}: %{{x}}<br>Aantal: %{{y}}<extra></extra>",
             )
 
-            # Cumulatieve lijn = over ALLE elementen
+            # Cumulatieve lijn (alle items)
             fig.add_scatter(
                 x=counts_all.index,
                 y=cum_share.values,
                 mode="lines+markers",
                 name="Cumulatief aandeel",
                 yaxis="y2",
-                hovertemplate=f"{dim_keuze}: %{ { 'x' } }<br>Cumulatief: %{ { 'y' } :.1%}<extra></extra>"
+                hovertemplate=f"{dim_keuze}: %{{x}}<br>Cumulatief: %{{y:.1%}}<extra></extra>",
             )
 
             # Hulplijnen + 80%-markering
             shapes = [
-                # Horizontale 80%-lijn (y2-as)
                 dict(type="line", x0=0, x1=max_n, y0=0.8, y1=0.8, yref="y2",
-                     line=dict(dash="dash", color="red"))
-            ]
-            shapes.append(
+                     line=dict(dash="dash", color="red")),
                 dict(type="line", xref="x", yref="paper",
                      x0=idx80_label, x1=idx80_label, y0=0, y1=1,
-                     line=dict(dash="dot", color="black"))
-            )
+                     line=dict(dash="dot", color="black")),
+            ]
 
             fig.update_layout(
                 title=f"Pareto — {dim_keuze} (80% hulplijn)",
@@ -869,22 +862,21 @@ with tab5:
                     dict(
                         x=idx80_label, y=cum80, xref="x", yref="y2",
                         text=f"80% bij #{k80+1}",
-                        showarrow=True, arrowhead=2, ax=0, ay=-30, bgcolor="white"
+                        showarrow=True, arrowhead=2, ax=0, ay=-30, bgcolor="white",
                     )
                 ],
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
 
             st.plotly_chart(fig, use_container_width=True)
 
-            # KPI's
+            # KPI's + tabel
             colA, colB = st.columns(2)
             with colA:
                 st.metric("Aantal elementen tot 80%", k80 + 1)
             with colB:
                 st.metric("Cumulatief aandeel bij markering", f"{cum80*100:.1f}%")
 
-            # Tabel met Top 20 + vlag "Top 80%"
             df_pareto = counts_all.reset_index()
             df_pareto.columns = [dim_keuze, "Aantal"]
             df_pareto["Bijdrage %"] = (df_pareto["Aantal"] / totaal * 100).round(1)
@@ -893,3 +885,4 @@ with tab5:
 
             st.markdown("#### Top 20 detail")
             st.dataframe(df_pareto.head(20))
+
