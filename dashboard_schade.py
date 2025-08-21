@@ -493,7 +493,7 @@ if handmatig_aantal != totaal_chauffeurs_auto:
 
 
         # ========== Accordeons per interval ==========
-        st.subheader("📊 Chauffeurs gegroepeerd per interval")
+    st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
         step = 5
         max_val = int(plot_df["aantal"].max())
