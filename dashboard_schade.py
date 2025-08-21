@@ -548,11 +548,13 @@ with tab1:
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
 
+    # Tel per teamcoach (we werken op de display-kolom zodat 'onbekend' ook mee telt)
     chart_data = df_filtered["teamcoach_disp"].value_counts()
 
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Staafdiagram horizontaal; dynamische hoogte bij veel coaches
         fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
         chart_data.sort_values().plot(kind="barh", ax=ax)
         ax.set_xlabel("Aantal schadegevallen")
@@ -561,29 +563,50 @@ with tab2:
         st.pyplot(fig)
 
         st.subheader("📂 Schadegevallen per teamcoach")
-        for coach in chart_data.index.tolist():
-            base_cols = ["Datum", "volledige naam", "volledige naam_disp", "BusTram_disp", "Locatie_disp"]
-            if "Link" in df_filtered.columns:
-                base_cols.append("Link")
 
+        # Doorloop elke teamcoach in volgorde van aflopend aantal
+        for coach in chart_data.sort_values(ascending=False).index.tolist():
+            # Veilig kolommen kiezen (Link is optioneel)
+            basis_kol = ["Datum", "volledige naam", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+            aanwezige_kol = [k for k in basis_kol if k in df_filtered.columns]
+            if "Link" in df_filtered.columns:
+                aanwezige_kol.append("Link")
+
+            # Filter & sorteer
             schade_per_coach = (
-                df_filtered[df_filtered["teamcoach_disp"] == coach][base_cols]
+                df_filtered.loc[df_filtered["teamcoach_disp"] == coach, aanwezige_kol]
                 .sort_values(by="Datum")
             )
             aantal = len(schade_per_coach)
 
             with st.expander(f"{coach} — {aantal} schadegevallen"):
-                for _, row in schade_per_coach.iterrows():
-                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = toon_chauffeur(row.get("volledige naam"))
-                    voertuig = row.get("BusTram_disp", "onbekend")
-                    locatie  = row.get("Locatie_disp", "onbekend")
-                    link = extract_url(row.get("Link")) if "Link" in schade_per_coach.columns else None
-                    prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
-                    if isinstance(link, str) and link:
-                        st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
-                    else:
-                        st.markdown(prefix + "❌ Geen geldige link")
+                if schade_per_coach.empty:
+                    st.caption("Geen rijen binnen de huidige filters.")
+                else:
+                    # Toon elke rij compact met veilige fallback
+                    for _, row in schade_per_coach.iterrows():
+                        datum_obj = row.get("Datum")
+                        datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+
+                        # Chauffeurnaam: prefer 'volledige naam' -> toon_chauffeur, anders 'volledige naam_disp'
+                        if "volledige naam" in schade_per_coach.columns and pd.notna(row.get("volledige naam")):
+                            chauffeur = toon_chauffeur(row.get("volledige naam"))
+                        else:
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+
+                        voertuig = row.get("BusTram_disp", "onbekend")
+                        locatie  = row.get("Locatie_disp", "onbekend")
+
+                        # Link (optioneel + formules uit Excel)
+                        link = None
+                        if "Link" in schade_per_coach.columns:
+                            link = extract_url(row.get("Link"))
+
+                        prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
+                        if isinstance(link, str) and link:
+                            st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                        else:
+                            st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 3: Voertuig =========
 with tab3:
