@@ -465,17 +465,32 @@ with tab1:
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
-        # ========== KPI blok ==========
-        totaal_chauffeurs = plot_df["chauffeur"].nunique()
-        totaal_schades = int(plot_df["aantal"].sum())
-        gem_per_chauffeur = round(totaal_schades / totaal_chauffeurs, 2) if totaal_chauffeurs > 0 else 0
+# ========== KPI blok ==========
+totaal_chauffeurs_auto = plot_df["chauffeur"].nunique()
+totaal_schades = int(plot_df["aantal"].sum())
 
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Aantal chauffeurs", totaal_chauffeurs)
-        col2.metric("Gemiddeld aantal schades", gem_per_chauffeur)
-        col3.metric("Totaal aantal schades", totaal_schades)
+col1, col2, col3 = st.columns(3)
 
-        st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
+with col1:
+    st.metric("Aantal chauffeurs (automatisch)", totaal_chauffeurs_auto)
+    handmatig_aantal = st.number_input(
+        "Handmatig aantal chauffeurs",
+        min_value=1,
+        value=int(totaal_chauffeurs_auto),
+        step=1,
+        help="Vul hier het aantal chauffeurs in om het gemiddelde te herberekenen."
+    )
+
+# gemiddelde o.b.v. handmatig aantal
+gem_handmatig = round(totaal_schades / handmatig_aantal, 2) if handmatig_aantal else 0
+col2.metric("Gemiddeld aantal schades", gem_handmatig)
+
+col3.metric("Totaal aantal schades", totaal_schades)
+
+# optionele hint als handmatig afwijkt
+if handmatig_aantal != totaal_chauffeurs_auto:
+    st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
+
 
         # ========== Accordeons per interval ==========
         st.subheader("📊 Chauffeurs gegroepeerd per interval")
