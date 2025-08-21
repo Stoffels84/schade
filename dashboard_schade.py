@@ -460,6 +460,7 @@ with tab1:
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Dataframe voor grafiek + badges
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
@@ -467,6 +468,7 @@ with tab1:
 
         st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
 
+        # (Laat de grafiek staan zoals voorheen)
         color_map = {"Voltooid": COLOR_GEEL, "Coaching": COLOR_BLAUW, "Beide": COLOR_MIX, "Geen": COLOR_GRIJS}
         fig = px.bar(
             plot_df, x="aantal", y="chauffeur", color="status", orientation="h",
@@ -485,27 +487,58 @@ with tab1:
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-        st.subheader("📂 Schadegevallen per chauffeur")
-        ordered = plot_df[["chauffeur","aantal"]].sort_values("aantal").to_dict("records")
-        for rec in reversed(ordered):
-            chauffeur_label = rec["chauffeur"]
-            aantal = int(rec["aantal"])
-            status = status_van_chauffeur(chauffeur_label)
-            badge  = badge_van_status(status)
-            titel  = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
+        # ================= Accordeons per interval =================
+        st.subheader("📂 Schadegevallen per chauffeur (gegroepeerd per interval)")
+
+        # Maak intervallen 1–5, 6–10, 11–15, ...
+        step = 5
+        max_val = int(plot_df["aantal"].max())
+        edges = list(range(0, max_val + step, step))        # 0,5,10,15,...
+        if edges[-1] < max_val:                              # vang randgeval
+            edges.append(edges[-1] + step)
+
+        plot_df["interval"] = pd.cut(
+            plot_df["aantal"],
+            bins=edges,
+            right=True,
+            include_lowest=True
+        )  # levert (0,5], (5,10], (10,15], ...
+
+        # Accordeon per schade-interval
+        for interval, groep in plot_df.groupby("interval", sort=False):
+            if groep.empty or pd.isna(interval):
+                continue
+            left, right = int(interval.left), int(interval.right)
+            low = max(1, left + 1)  # 0->1
+            titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
 
             with st.expander(titel):
-                cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
-                schade_chauffeur = df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols].sort_values(by="Datum")
-                for _, row in schade_chauffeur.iterrows():
-                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
-                    link = extract_url(row.get("Link")) if "Link" in cols else None
-                    prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                    if isinstance(link, str) and link:
-                        st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
-                    else:
-                        st.markdown(prefix + "❌ Geen geldige link")
+                # Sorteer binnen het interval van hoog naar laag
+                for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
+                    chauffeur_label = rec["chauffeur"]
+                    aantal = int(rec["aantal"])
+                    status = rec["status"]
+                    badge  = rec["badge"]
+                    subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
+
+                    with st.expander(subtitel):
+                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                               if "Link" in df_filtered.columns else \
+                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+
+                        schade_chauffeur = (
+                            df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
+                            .sort_values(by="Datum")
+                        )
+                        for _, row in schade_chauffeur.iterrows():
+                            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                            voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
+                            link = extract_url(row.get("Link")) if "Link" in cols else None
+                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
