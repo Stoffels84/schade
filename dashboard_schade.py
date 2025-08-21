@@ -796,32 +796,47 @@ with tab5:
         st.info("Geen data om te tonen voor deze selectie.")
     else:
         counts = df_filtered[kol].value_counts()
-        totaal = int(counts.sum())
+        totaal = counts.sum()
+
         if totaal == 0:
             st.info("Geen data om te tonen voor deze selectie.")
         else:
-            cum = (counts / totaal).cumsum()
+            # Top N slider
+            top_n = st.slider("Toon top N", 10, min(100, len(counts)), 20)
+            counts_top = counts.head(top_n)
+            cum = (counts.cumsum() / totaal)
 
-            # Bar (links) + cumulatieve lijn (rechts) in 1 matplotlib-plot
-            import matplotlib.pyplot as plt
-            fig, ax1 = plt.subplots(figsize=(10, 4))
-            counts.plot(kind="bar", ax=ax1)
-            ax1.set_ylabel("Aantal schades")
-            ax1.tick_params(axis="x", labelrotation=45)
+            import plotly.graph_objects as go
+            fig = go.Figure()
 
-            ax2 = ax1.twinx()
-            ax2.plot(range(len(cum)), cum.values, marker="o")
-            ax2.set_ylabel("Cumulatief aandeel")
-            ax2.axhline(0.8, linestyle="--")
-            ax2.set_ylim(0, 1.05)
+            # Staafdiagram (Top N)
+            fig.add_bar(x=counts_top.index, y=counts_top.values, name="Aantal schades")
 
-            ax1.set_title(f"Pareto — {dim_keuze} (80% hulplijn)")
-            plt.tight_layout()
-            st.pyplot(fig)
+            # Lijn (cumulatief, over alle elementen)
+            fig.add_scatter(x=counts.index, y=cum.values,
+                            mode="lines+markers",
+                            name="Cumulatief aandeel",
+                            yaxis="y2")
 
-            # Top-bijdragers tot 80%
-            drempel = cum[cum <= 0.8].index.tolist()
-            st.caption(f"Elementen tot 80%: {len(drempel)} op {len(counts)}")
-            with st.expander("Toon lijst (tot 80%)"):
-                st.write(pd.DataFrame({"item": drempel, "aantal": counts.loc[drempel].values}))
+            fig.update_layout(
+                title=f"Pareto — {dim_keuze} (80% hulplijn)",
+                xaxis=dict(tickangle=-45, showticklabels=False),  # labels verbergen (anders chaos)
+                yaxis=dict(title="Aantal schades"),
+                yaxis2=dict(title="Cumulatief aandeel",
+                            overlaying="y",
+                            side="right",
+                            range=[0,1.05]),
+                shapes=[dict(type="line", x0=0, x1=len(counts),
+                             y0=0.8, y1=0.8,
+                             yref="y2", line=dict(dash="dash", color="red"))]
+            )
 
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Top 20 tabel met cumulatief percentage
+            df_pareto = counts.reset_index()
+            df_pareto.columns = [dim_keuze, "Aantal"]
+            df_pareto["Cumulatief %"] = (df_pareto["Aantal"].cumsum() / totaal * 100).round(1)
+
+            st.markdown("#### Top 20 detail")
+            st.dataframe(df_pareto.head(20))
