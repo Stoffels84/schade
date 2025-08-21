@@ -457,6 +457,7 @@ with tab1:
     st.subheader("📂 Schadegevallen per chauffeur")
 
     chart_series = df_filtered["volledige naam_disp"].value_counts()
+
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
@@ -465,77 +466,83 @@ with tab1:
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
-# ========== KPI blok ==========
-totaal_chauffeurs_auto = plot_df["chauffeur"].nunique()
-totaal_schades = int(plot_df["aantal"].sum())
+        # ========== KPI blok ==========
+        totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
+        totaal_schades = int(plot_df["aantal"].sum())
 
-col1, col2, col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Aantal chauffeurs (automatisch)", totaal_chauffeurs_auto)
+            handmatig_aantal = st.number_input(
+                "Handmatig aantal chauffeurs",
+                min_value=1,
+                value=max(1, totaal_chauffeurs_auto),
+                step=1,
+                help="Vul hier het aantal chauffeurs in om het gemiddelde te herberekenen."
+            )
 
-with col1:
-    st.metric("Aantal chauffeurs (automatisch)", totaal_chauffeurs_auto)
-    handmatig_aantal = st.number_input(
-        "Handmatig aantal chauffeurs",
-        min_value=1,
-        value=int(totaal_chauffeurs_auto),
-        step=1,
-        help="Vul hier het aantal chauffeurs in om het gemiddelde te herberekenen."
-    )
+        gem_handmatig = round(totaal_schades / handmatig_aantal, 2) if handmatig_aantal else 0.0
+        col2.metric("Gemiddeld aantal schades", gem_handmatig)
+        col3.metric("Totaal aantal schades", totaal_schades)
 
-# gemiddelde o.b.v. handmatig aantal
-gem_handmatig = round(totaal_schades / handmatig_aantal, 2) if handmatig_aantal else 0
-col2.metric("Gemiddeld aantal schades", gem_handmatig)
-
-col3.metric("Totaal aantal schades", totaal_schades)
-
-# optionele hint als handmatig afwijkt
-if handmatig_aantal != totaal_chauffeurs_auto:
-    st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
-
+        if handmatig_aantal != totaal_chauffeurs_auto:
+            st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
 
         # ========== Accordeons per interval ==========
-    st.subheader("📊 Chauffeurs gegroepeerd per interval")
+        st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
-    step = 5
-    max_val = int(plot_df["aantal"].max())
-    edges = list(range(0, max_val + step, step))
-    if edges[-1] < max_val:
-        edges.append(edges[-1] + step)
+        # Robuuste bin-randen (stap 5)
+        step = 5
+        max_val = int(plot_df["aantal"].max()) if not plot_df.empty else 0
+        if max_val <= 0:
+            edges = [0, step]
+        else:
+            edges = list(range(0, max_val + step, step))
+            if edges[-1] < max_val:
+                edges.append(edges[-1] + step)
 
-    plot_df["interval"] = pd.cut(
-        plot_df["aantal"], bins=edges, right=True, include_lowest=True
-     )
+        plot_df["interval"] = pd.cut(
+            plot_df["aantal"],
+            bins=edges,
+            right=True,
+            include_lowest=True
+        )
 
-    for interval, groep in plot_df.groupby("interval", sort=False):
-        if groep.empty or pd.isna(interval):
-            continue
-        left, right = int(interval.left), int(interval.right)
-        low = max(1, left + 1)
-        titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
+        for interval, groep in plot_df.groupby("interval", sort=False):
+            if groep.empty or pd.isna(interval):
+                continue
+            # Label netjes (1..right) i.p.v. 0..right
+            left, right = int(interval.left), int(interval.right)
+            low = max(1, left + 1)
+            titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
 
-        with st.expander(titel):
-            for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
-                chauffeur_label = rec["chauffeur"]
-                aantal = int(rec["aantal"])
-                status = rec["status"]
-                badge  = rec["badge"]
-                subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
-                with st.expander(subtitel):
-                    cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
-                           if "Link" in df_filtered.columns else \
-                           ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
-                    schade_chauffeur = (
-                        df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
-                        .sort_values(by="Datum")
-                    )
-                    for _, row in schade_chauffeur.iterrows():
-                        datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                        voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
-                        link = extract_url(row.get("Link")) if "Link" in cols else None
-                        prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                        if isinstance(link, str) and link:
-                               st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
-                        else:
-                            st.markdown(prefix + "❌ Geen geldige link")
+            with st.expander(titel):
+                for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
+                    chauffeur_label = rec["chauffeur"]
+                    aantal = int(rec["aantal"])
+                    status = rec["status"]
+                    badge  = rec["badge"]
+                    subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
+                    with st.expander(subtitel):
+                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                               if "Link" in df_filtered.columns else \
+                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                        schade_chauffeur = (
+                            df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
+                            .sort_values(by="Datum")
+                        )
+                        for _, row in schade_chauffeur.iterrows():
+                            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                            voertuig  = row["BusTram_disp"]
+                            loc       = row["Locatie_disp"]
+                            coach     = row["teamcoach_disp"]
+                            link      = extract_url(row.get("Link")) if "Link" in cols else None
+                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
+
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
