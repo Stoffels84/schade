@@ -338,7 +338,7 @@ with st.sidebar:
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
 # ========= Tabs =========
-tab1, tab2, tab3, tab4 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto"])
 
 # ========= PDF Export (per teamcoach) =========
 st.markdown("---")
@@ -774,3 +774,54 @@ with tab4:
                                 st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                             else:
                                 st.markdown(prefix + "❌ Geen geldige of aanwezige link")
+
+
+
+# ... jouw bestaande tab1..tab4 code blijft ...
+
+# ========= TAB 5: Pareto =========
+with tab5:
+    st.subheader("📈 Pareto-analyse (80/20)")
+
+    dim_opties = {
+        "Chauffeur": "volledige naam_disp",
+        "Locatie": "Locatie_disp",
+        "Voertuig": "BusTram_disp",
+        "Teamcoach": "teamcoach_disp",
+    }
+    dim_keuze = st.selectbox("Dimensie", list(dim_opties.keys()), index=0)
+    kol = dim_opties[dim_keuze]
+
+    if kol not in df_filtered.columns or df_filtered.empty:
+        st.info("Geen data om te tonen voor deze selectie.")
+    else:
+        counts = df_filtered[kol].value_counts()
+        totaal = int(counts.sum())
+        if totaal == 0:
+            st.info("Geen data om te tonen voor deze selectie.")
+        else:
+            cum = (counts / totaal).cumsum()
+
+            # Bar (links) + cumulatieve lijn (rechts) in 1 matplotlib-plot
+            import matplotlib.pyplot as plt
+            fig, ax1 = plt.subplots(figsize=(10, 4))
+            counts.plot(kind="bar", ax=ax1)
+            ax1.set_ylabel("Aantal schades")
+            ax1.tick_params(axis="x", labelrotation=45)
+
+            ax2 = ax1.twinx()
+            ax2.plot(range(len(cum)), cum.values, marker="o")
+            ax2.set_ylabel("Cumulatief aandeel")
+            ax2.axhline(0.8, linestyle="--")
+            ax2.set_ylim(0, 1.05)
+
+            ax1.set_title(f"Pareto — {dim_keuze} (80% hulplijn)")
+            plt.tight_layout()
+            st.pyplot(fig)
+
+            # Top-bijdragers tot 80%
+            drempel = cum[cum <= 0.8].index.tolist()
+            st.caption(f"Elementen tot 80%: {len(drempel)} op {len(counts)}")
+            with st.expander("Toon lijst (tot 80%)"):
+                st.write(pd.DataFrame({"item": drempel, "aantal": counts.loc[drempel].values}))
+
