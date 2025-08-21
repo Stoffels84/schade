@@ -523,19 +523,19 @@ if handmatig_aantal != totaal_chauffeurs_auto:
                     cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
                            if "Link" in df_filtered.columns else \
                            ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
-                        schade_chauffeur = (
-                            df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
-                            .sort_values(by="Datum")
-                        )
-                        for _, row in schade_chauffeur.iterrows():
-                            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                            voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
-                            link = extract_url(row.get("Link")) if "Link" in cols else None
-                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                            if isinstance(link, str) and link:
-                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
-                            else:
-                                st.markdown(prefix + "❌ Geen geldige link")
+                    schade_chauffeur = (
+                        df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
+                        .sort_values(by="Datum")
+                    )
+                    for _, row in schade_chauffeur.iterrows():
+                        datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                        voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
+                        link = extract_url(row.get("Link")) if "Link" in cols else None
+                        prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                        if isinstance(link, str) and link:
+                               st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                        else:
+                            st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
