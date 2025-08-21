@@ -611,45 +611,109 @@ with tab2:
 # ========= TAB 3: Voertuig =========
 with tab3:
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
-    df_per_maand = df_filtered.copy()
-    maanden_nl = {1:"januari",2:"februari",3:"maart",4:"april",5:"mei",6:"juni",7:"juli",8:"augustus",9:"september",10:"oktober",11:"november",12:"december"}
-    df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower()
-    maand_volgorde = ["januari","februari","maart","april","mei","juni","juli","augustus","september","oktober","november","december"]
-    groep = df_per_maand.groupby(["Maand", "BusTram_disp"]).size().unstack(fill_value=0)
-    groep = groep.reindex(maand_volgorde)
 
-    fig2, ax2 = plt.subplots(figsize=(10, 4))
-    groep.plot(ax=ax2, marker="o")
-    ax2.set_xlabel("Maand"); ax2.set_ylabel("Aantal schadegevallen")
-    ax2.set_title("Lijngrafiek per maand per voertuigtype")
-    ax2.legend(title="Voertuig")
-    st.pyplot(fig2)
+    # Werk op een kopie; filter alleen rijen met geldige datum
+    df_per_maand = df_filtered.copy()
+    if "Datum" in df_per_maand.columns:
+        df_per_maand = df_per_maand[df_per_maand["Datum"].notna()].copy()
+    else:
+        df_per_maand["Datum"] = pd.NaT  # voor uniforme kolommen
+
+    # Maandlabels (NL) en vaste volgorde
+    maanden_nl = {
+        1:"januari",2:"februari",3:"maart",4:"april",5:"mei",6:"juni",
+        7:"juli",8:"augustus",9:"september",10:"oktober",11:"november",12:"december"
+    }
+    maand_volgorde = ["januari","februari","maart","april","mei","juni",
+                      "juli","augustus","september","oktober","november","december"]
+
+    if not df_per_maand.empty and df_per_maand["Datum"].notna().any():
+        df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower()
+        # Tel per maand x voertuigtype (display-kolom, zodat 'onbekend' mee telt)
+        voertuig_col = "BusTram_disp" if "BusTram_disp" in df_per_maand.columns else "Bus/ Tram"
+        if voertuig_col not in df_per_maand.columns:
+            # Maak een lege grafiek en waarschuwing
+            st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+        else:
+            groep = (
+                df_per_maand.groupby(["Maand", voertuig_col])
+                .size()
+                .unstack(fill_value=0)
+            )
+            # Reindex maanden in vaste volgorde; ontbrekende maanden = 0
+            groep = groep.reindex(maand_volgorde).fillna(0)
+
+            # Lijngrafiek
+            fig2, ax2 = plt.subplots(figsize=(10, 4))
+            groep.plot(ax=ax2, marker="o")
+            ax2.set_xlabel("Maand")
+            ax2.set_ylabel("Aantal schadegevallen")
+            ax2.set_title("Lijngrafiek per maand per voertuigtype")
+            ax2.legend(title="Voertuig")
+            st.pyplot(fig2)
+    else:
+        st.info("ℹ️ Geen geldige datums binnen de huidige filters om een maandoverzicht te tonen.")
 
     st.subheader("Aantal schadegevallen per type voertuig")
-    chart_data = df_filtered["BusTram_disp"].value_counts()
-    if chart_data.empty:
-        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
-    else:
-        fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
-        chart_data.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Aantal schadegevallen"); ax.set_ylabel("Voertuigtype")
-        ax.set_title("Schadegevallen per type voertuig")
-        st.pyplot(fig)
 
-        st.subheader("📂 Schadegevallen per voertuigtype")
-        for voertuig in chart_data.index.tolist():
-            cols = ["Datum", "volledige naam_disp", "Link"] if "Link" in df_filtered.columns else ["Datum", "volledige naam_disp"]
-            schade_per_voertuig = df_filtered[df_filtered["BusTram_disp"] == voertuig][cols].sort_values(by="Datum")
-            aantal = len(schade_per_voertuig)
-            with st.expander(f"{voertuig} — {aantal} schadegevallen"):
-                for _, row in schade_per_voertuig.iterrows():
-                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam_disp"]
-                    link = extract_url(row.get("Link")) if "Link" in cols else None
-                    if isinstance(link, str) and link:
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
+    # Telling per voertuigtype op de display-kolom
+    voertuig_col = "BusTram_disp" if "BusTram_disp" in df_filtered.columns else None
+    if voertuig_col is None:
+        st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+    else:
+        chart_data = df_filtered[voertuig_col].value_counts()
+
+        if chart_data.empty:
+            st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+        else:
+            # Staafdiagram horizontaal; dynamische hoogte
+            fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
+            chart_data.sort_values().plot(kind="barh", ax=ax)
+            ax.set_xlabel("Aantal schadegevallen")
+            ax.set_ylabel("Voertuigtype")
+            ax.set_title("Schadegevallen per type voertuig")
+            st.pyplot(fig)
+
+            st.subheader("📂 Schadegevallen per voertuigtype")
+
+            # Loop in aflopende volgorde van aantal
+            for voertuig in chart_data.sort_values(ascending=False).index.tolist():
+                # Kolommen veilig samenstellen; Link is optioneel
+                kol_list = ["Datum", "volledige naam_disp"]
+                if voertuig_col not in kol_list: 
+                    kol_list.append(voertuig_col)
+                if "Link" in df_filtered.columns:
+                    kol_list.append("Link")
+                if "teamcoach_disp" in df_filtered.columns:
+                    kol_list.append("teamcoach_disp")
+                if "Locatie_disp" in df_filtered.columns:
+                    kol_list.append("Locatie_disp")
+
+                schade_per_voertuig = (
+                    df_filtered.loc[df_filtered[voertuig_col] == voertuig, [k for k in kol_list if k in df_filtered.columns]]
+                    .sort_values(by="Datum")
+                )
+                aantal = len(schade_per_voertuig)
+
+                with st.expander(f"{voertuig} — {aantal} schadegevallen"):
+                    if schade_per_voertuig.empty:
+                        st.caption("Geen rijen binnen de huidige filters.")
                     else:
-                        st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
+                        for _, row in schade_per_voertuig.iterrows():
+                            datum_obj = row.get("Datum")
+                            datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+                            coach     = row.get("teamcoach_disp", "onbekend")
+                            locatie   = row.get("Locatie_disp", "onbekend")
+
+                            # Link (optioneel + Excel-formules toestaan)
+                            link = extract_url(row.get("Link")) if "Link" in schade_per_voertuig.columns else None
+
+                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🧑‍💼 {coach} — 📍 {locatie} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 4: Locatie =========
 with tab4:
