@@ -792,10 +792,16 @@ with tab5:
     dim_keuze = st.selectbox("Dimensie", list(dim_opties.keys()), index=0)
     kol = dim_opties[dim_keuze]
 
-    if kol not in df_filtered.columns or df_filtered.empty:
+    # ===== Alleen in Pareto: sluit chauffeurs met dienstnr 9999 uit =====
+    base_df = df_filtered.copy()
+    if dim_keuze == "Chauffeur" and "dienstnummer" in base_df.columns:
+        base_df = base_df[base_df["dienstnummer"].astype(str).str.strip() != "9999"].copy()
+
+    # ===== Pareto berekening =====
+    if kol not in base_df.columns or base_df.empty:
         st.info("Geen data om te tonen voor deze selectie.")
     else:
-        counts_all = df_filtered[kol].value_counts()
+        counts_all = base_df[kol].value_counts()
         max_n = int(len(counts_all))
         if max_n == 0:
             st.info("Geen data om te tonen voor deze selectie.")
@@ -822,18 +828,15 @@ with tab5:
             top_n = st.slider("Toon top N", min_value=min_n, max_value=max_slider, value=default_n, step=1)
             counts_top = counts_all.head(top_n)
 
+            # Plot
             import plotly.graph_objects as go
             fig = go.Figure()
-
-            # Bars (Top N) — hover accuraat
             fig.add_bar(
                 x=counts_top.index,
                 y=counts_top.values,
                 name="Aantal schades",
                 hovertemplate=f"{dim_keuze}: %{{x}}<br>Aantal: %{{y}}<extra></extra>",
             )
-
-            # Cumulatieve lijn (alle items)
             fig.add_scatter(
                 x=counts_all.index,
                 y=cum_share.values,
@@ -843,7 +846,7 @@ with tab5:
                 hovertemplate=f"{dim_keuze}: %{{x}}<br>Cumulatief: %{{y:.1%}}<extra></extra>",
             )
 
-            # Hulplijnen + 80%-markering
+            # Hulplijnen en annotatie
             shapes = [
                 dict(type="line", x0=0, x1=max_n, y0=0.8, y1=0.8, yref="y2",
                      line=dict(dash="dash", color="red")),
@@ -867,7 +870,6 @@ with tab5:
                 ],
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
             )
-
             st.plotly_chart(fig, use_container_width=True)
 
             # KPI's + tabel
@@ -885,4 +887,3 @@ with tab5:
 
             st.markdown("#### Top 20 detail")
             st.dataframe(df_pareto.head(20))
-
