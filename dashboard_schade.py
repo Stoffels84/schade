@@ -454,66 +454,50 @@ if generate_pdf:
 
 # ========= TAB 1: Chauffeur =========
 with tab1:
-    st.subheader("Aantal schadegevallen per chauffeur")
+    st.subheader("📂 Schadegevallen per chauffeur")
 
     chart_series = df_filtered["volledige naam_disp"].value_counts()
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Dataframe voor grafiek + badges
+        # Dataframe voor badges en status
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
         plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
-        plot_df = plot_df.sort_values("aantal", ascending=True, kind="stable")
+
+        # ========== KPI blok ==========
+        totaal_chauffeurs = plot_df["chauffeur"].nunique()
+        totaal_schades = int(plot_df["aantal"].sum())
+        gem_per_chauffeur = round(totaal_schades / totaal_chauffeurs, 2) if totaal_chauffeurs > 0 else 0
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Aantal chauffeurs", totaal_chauffeurs)
+        col2.metric("Gemiddeld aantal schades", gem_per_chauffeur)
+        col3.metric("Totaal aantal schades", totaal_schades)
 
         st.markdown("**Legenda:** 🟡 Voltooid · 🔵 Coaching · 🟡🔵 Beide · ⚪ Geen")
 
-        # (Laat de grafiek staan zoals voorheen)
-        color_map = {"Voltooid": COLOR_GEEL, "Coaching": COLOR_BLAUW, "Beide": COLOR_MIX, "Geen": COLOR_GRIJS}
-        fig = px.bar(
-            plot_df, x="aantal", y="chauffeur", color="status", orientation="h",
-            color_discrete_map=color_map,
-            hover_data={"aantal": True, "chauffeur": True, "status": True, "badge": False},
-            labels={"aantal": "Aantal schadegevallen", "chauffeur": "Chauffeur", "status": "Status"},
-        )
-        fig.update_traces(
-            customdata=plot_df[["badge", "status"]].to_numpy(),
-            hovertemplate="<b>%{y}</b><br>Aantal: %{x}<br>Status: %{customdata[0]}%{customdata[1]}<extra></extra>"
-        )
-        fig.update_layout(
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-            margin=dict(l=10, r=10, t=10, b=10),
-            height=max(260, 28 * len(plot_df) + 120),
-        )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        # ========== Accordeons per interval ==========
+        st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
-        # ================= Accordeons per interval =================
-        st.subheader("📂 Schadegevallen per chauffeur (gegroepeerd per interval)")
-
-        # Maak intervallen 1–5, 6–10, 11–15, ...
         step = 5
         max_val = int(plot_df["aantal"].max())
-        edges = list(range(0, max_val + step, step))        # 0,5,10,15,...
-        if edges[-1] < max_val:                              # vang randgeval
+        edges = list(range(0, max_val + step, step))
+        if edges[-1] < max_val:
             edges.append(edges[-1] + step)
 
         plot_df["interval"] = pd.cut(
-            plot_df["aantal"],
-            bins=edges,
-            right=True,
-            include_lowest=True
-        )  # levert (0,5], (5,10], (10,15], ...
+            plot_df["aantal"], bins=edges, right=True, include_lowest=True
+        )
 
-        # Accordeon per schade-interval
         for interval, groep in plot_df.groupby("interval", sort=False):
             if groep.empty or pd.isna(interval):
                 continue
             left, right = int(interval.left), int(interval.right)
-            low = max(1, left + 1)  # 0->1
+            low = max(1, left + 1)
             titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
 
             with st.expander(titel):
-                # Sorteer binnen het interval van hoog naar laag
                 for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
                     chauffeur_label = rec["chauffeur"]
                     aantal = int(rec["aantal"])
