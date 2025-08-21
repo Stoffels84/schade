@@ -505,26 +505,24 @@ if handmatig_aantal != totaal_chauffeurs_auto:
         plot_df["aantal"], bins=edges, right=True, include_lowest=True
      )
 
-        for interval, groep in plot_df.groupby("interval", sort=False):
-            if groep.empty or pd.isna(interval):
-                continue
-            left, right = int(interval.left), int(interval.right)
-            low = max(1, left + 1)
-            titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
+    for interval, groep in plot_df.groupby("interval", sort=False):
+        if groep.empty or pd.isna(interval):
+            continue
+        left, right = int(interval.left), int(interval.right)
+        low = max(1, left + 1)
+        titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
 
-            with st.expander(titel):
-                for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
-                    chauffeur_label = rec["chauffeur"]
-                    aantal = int(rec["aantal"])
-                    status = rec["status"]
-                    badge  = rec["badge"]
-                    subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
-
-                    with st.expander(subtitel):
-                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
-                               if "Link" in df_filtered.columns else \
-                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
-
+        with st.expander(titel):
+            for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
+                chauffeur_label = rec["chauffeur"]
+                aantal = int(rec["aantal"])
+                status = rec["status"]
+                badge  = rec["badge"]
+                subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
+                with st.expander(subtitel):
+                    cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                           if "Link" in df_filtered.columns else \
+                           ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
                         schade_chauffeur = (
                             df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
                             .sort_values(by="Datum")
