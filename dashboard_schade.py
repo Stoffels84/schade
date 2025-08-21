@@ -42,28 +42,16 @@ def naam_naar_dn(naam: str) -> str | None:
     m = re.match(r"\s*(\d+)", s)
     return m.group(1) if m else None
 
-
 def toon_chauffeur(x):
     """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
     if x is None or pd.isna(x):
         return "onbekend"
-
     s = str(x).strip()
     if not s or s.lower() in {"nan", "none", "<na>"}:
         return "onbekend"
-
     # strip '1234 - ' of '1234-'
     s = re.sub(r"^\s*\d+\s*-\s*", "", s)
     return s
-
-
-
-    
-    """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
-    if not isinstance(naam, str):
-        return None
-    m = re.match(r"\s*(\d+)", naam)
-    return m.group(1) if m else None
 
 def safe_name(x) -> str:
     """Netjes tonen; vermijd 'nan'/'none'/lege strings."""
@@ -78,6 +66,17 @@ def _parse_excel_dates(series: pd.Series) -> pd.Series:
         d2 = pd.to_datetime(series[need_retry], errors="coerce", dayfirst=False)
         d1.loc[need_retry] = d2
     return d1
+
+# Kleine helper om hyperlinks uit Excel-formules te halen
+HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
+def extract_url(x) -> str | None:
+    if pd.isna(x):
+        return None
+    s = str(x).strip()
+    if s.startswith(("http://", "https://")):
+        return s
+    m = HYPERLINK_RE.search(s)
+    return m.group(1) if m else None
 
 # ========= Kleuren =========
 COLOR_GEEL  = "#FFD54F"  # voltooide coaching
@@ -299,17 +298,10 @@ with st.sidebar:
         date_from = df["Datum"].min().date()
         date_to   = df["Datum"].max().date()
 
-# In de sidebar...
-with st.sidebar:
-    st.header("🔍 Filters")
-    # ... al je multiselects en datumcode ...
-
-    # Alleen nog reset-knop, zonder colA/colB
+    # Reset-knop
     if st.button("🔄 Reset filters"):
         qp.clear()
         st.rerun()
-
-
 
 # ========= Filters toepassen =========
 sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
@@ -431,8 +423,8 @@ if generate_pdf:
         nm = row["volledige naam_disp"]; voertuig = row["BusTram_disp"]; locatie = row["Locatie_disp"]
         rij = [datum, nm, voertuig, locatie]
         if heeft_link:
-            link = row.get("Link")
-            rij.append(str(link) if (pd.notna(link) and isinstance(link, str) and link.startswith(("http://","https://"))) else "-")
+            link = extract_url(row.get("Link"))
+            rij.append(link if link else "-")
         tabel_data.append(rij)
 
     if len(tabel_data) > 1:
@@ -508,9 +500,9 @@ with tab1:
                 for _, row in schade_chauffeur.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
                     voertuig  = row["BusTram_disp"]; loc = row["Locatie_disp"]; coach = row["teamcoach_disp"]
+                    link = extract_url(row.get("Link")) if "Link" in cols else None
                     prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
-                    link = row.get("Link") if "Link" in cols else None
-                    if isinstance(link, str) and link.startswith(("http://", "https://")):
+                    if isinstance(link, str) and link:
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(prefix + "❌ Geen geldige link")
@@ -519,13 +511,11 @@ with tab1:
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
 
-    # Aggregatie voor de bar chart
     chart_data = df_filtered["teamcoach_disp"].value_counts()
 
     if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        # Bar chart (matplotlib)
         fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
         chart_data.sort_values().plot(kind="barh", ax=ax)
         ax.set_xlabel("Aantal schadegevallen")
@@ -533,24 +523,9 @@ with tab2:
         ax.set_title("Schadegevallen per teamcoach")
         st.pyplot(fig)
 
-        # Detailweergave (expander per teamcoach)
         st.subheader("📂 Schadegevallen per teamcoach")
-
-        # Kleine helper om hyperlinks uit Excel-formules te halen (werkt ook zonder)
-        HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
-        def extract_url(x) -> str | None:
-            if pd.isna(x): 
-                return None
-            s = str(x).strip()
-            if s.startswith(("http://", "https://")):
-                return s
-            m = HYPERLINK_RE.search(s)
-            return m.group(1) if m else None
-
         for coach in chart_data.index.tolist():
-            # Kolommen klaarzetten (Link optioneel)
-            base_cols = ["Datum", "volledige naam", "volledige naam_disp",
-                         "BusTram_disp", "Locatie_disp"]
+            base_cols = ["Datum", "volledige naam", "volledige naam_disp", "BusTram_disp", "Locatie_disp"]
             if "Link" in df_filtered.columns:
                 base_cols.append("Link")
 
@@ -562,31 +537,16 @@ with tab2:
 
             with st.expander(f"{coach} — {aantal} schadegevallen"):
                 for _, row in schade_per_coach.iterrows():
-                    # Datum tonen
-                    datum_str = (
-                        row["Datum"].strftime("%d-%m-%Y")
-                        if pd.notna(row["Datum"]) else "onbekend"
-                    )
-
-                    # **FIX**: robuuste naamweergave
+                    datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
                     chauffeur = toon_chauffeur(row.get("volledige naam"))
-
-                    # Voertuig & locatie
                     voertuig = row.get("BusTram_disp", "onbekend")
                     locatie  = row.get("Locatie_disp", "onbekend")
-
-                    # Tekst bouwen
+                    link = extract_url(row.get("Link")) if "Link" in schade_per_coach.columns else None
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
-
-                    # Link (indien aanwezig en geldig)
-                    link_raw = row.get("Link") if "Link" in schade_per_coach.columns else None
-                    link = extract_url(link_raw)
                     if isinstance(link, str) and link:
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(prefix + "❌ Geen geldige link")
-
-
 
 # ========= TAB 3: Voertuig =========
 with tab3:
@@ -624,8 +584,9 @@ with tab3:
             with st.expander(f"{voertuig} — {aantal} schadegevallen"):
                 for _, row in schade_per_voertuig.iterrows():
                     datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
-                    chauffeur = row["volledige naam_disp"]; link = row.get("Link")
-                    if isinstance(link, str) and link.startswith(("http://", "https://")):
+                    chauffeur = row["volledige naam_disp"]
+                    link = extract_url(row.get("Link")) if "Link" in cols else None
+                    if isinstance(link, str) and link:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — [🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(f"📅 {datum_str} — 👤 {chauffeur} — ❌ Geen geldige link")
@@ -656,9 +617,9 @@ with tab4:
                     chauffeur = row["volledige naam_disp"]
                     voertuig  = row["BusTram_disp"]
                     coach     = row["teamcoach_disp"]
+                    link = extract_url(row.get("Link")) if "Link" in cols else None
                     prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
-                    link = row.get("Link") if "Link" in cols else None
-                    if isinstance(link, str) and link.startswith(("http://", "https://")):
+                    if isinstance(link, str) and link:
                         st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                     else:
                         st.markdown(prefix + "❌ Geen geldige link")
