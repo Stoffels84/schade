@@ -495,15 +495,15 @@ if handmatig_aantal != totaal_chauffeurs_auto:
         # ========== Accordeons per interval ==========
     st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
-        step = 5
-        max_val = int(plot_df["aantal"].max())
-        edges = list(range(0, max_val + step, step))
-        if edges[-1] < max_val:
-            edges.append(edges[-1] + step)
+    step = 5
+    max_val = int(plot_df["aantal"].max())
+    edges = list(range(0, max_val + step, step))
+    if edges[-1] < max_val:
+        edges.append(edges[-1] + step)
 
-        plot_df["interval"] = pd.cut(
-            plot_df["aantal"], bins=edges, right=True, include_lowest=True
-        )
+    plot_df["interval"] = pd.cut(
+        plot_df["aantal"], bins=edges, right=True, include_lowest=True
+     )
 
         for interval, groep in plot_df.groupby("interval", sort=False):
             if groep.empty or pd.isna(interval):
