@@ -475,8 +475,6 @@ with tab1:
                         ),
                         use_container_width=True,
                     )
-
-                    ,
                         ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"],
                 shown += 1
 
