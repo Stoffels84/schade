@@ -312,7 +312,7 @@ with st.sidebar:
     selected_kwartalen  = st.multiselect("Kwartaal",    options=kwartaal_options, default=pref_kw)
 
     # Datum-bereik = gekozen kwartalen, anders volledige range
-    st.markdown("### 🗓️ Datum")
+
     if selected_kwartalen:
         sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
         date_from = sel_periods_idx.start_time.min().date()
