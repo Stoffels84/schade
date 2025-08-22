@@ -280,7 +280,7 @@ pref_lo = _clean_list(qp.get_all("locatie"),  locatie_options)  or locatie_optio
 pref_vh = _clean_list(qp.get_all("voertuig"),  voertuig_options) or voertuig_options
 pref_kw = _clean_list(qp.get_all("kwartaal"),  kwartaal_options)  or kwartaal_options
 
-st.sidebar.image("logo.png", use_column_width=True)
+st.image("logo.png", use_container_width=True)
 
 
 # ========= Sidebar filters =========
