@@ -919,3 +919,75 @@ with tab5:
 
             st.markdown("#### Top 20 detail")
             st.dataframe(df_pareto.head(20))
+
+
+
+
+
+# ========= TAB 6: Opzoeken =========
+with tab6:
+    st.subheader("🔎 Opzoeken op personeelsnummer")
+
+    # We zoeken in de volledige dataset met geldige datums (df), niet alleen df_filtered
+    # zodat je altijd alles van die persoon ziet binnen de dataset.
+    zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
+
+    # Normaliseer invoer -> enkel cijfers
+    dn_in = re.findall(r"\d+", str(zoek))  # pikt ook '41092 - Naam' op
+    dn_in = dn_in[0] if dn_in else ""
+
+    if not dn_in:
+        st.info("Geef een personeelsnummer in om resultaten te zien.")
+    else:
+        if "dienstnummer" not in df.columns:
+            st.error("Kolom 'dienstnummer' ontbreekt in de data.")
+        else:
+            res = (
+                df[df["dienstnummer"].astype(str).str.strip() == dn_in]
+                .copy()
+            )
+
+            # Kolommen samenstellen en link klikbaar maken
+            heeft_link = "Link" in res.columns
+            res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
+
+            # Toon alleen gevraagde velden
+            toon_kol = ["Datum", "Locatie_disp"]
+            if heeft_link:
+                toon_kol.append("URL")
+
+            if res.empty:
+                st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
+            else:
+                res = res.sort_values("Datum", ascending=False)
+
+                st.metric("Aantal schadegevallen", len(res))
+
+                # Klikbare link-kolom met nette label
+                if heeft_link:
+                    st.dataframe(
+                        res[toon_kol],
+                        column_config={
+                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                            "URL": st.column_config.LinkColumn("Link", display_text="🔗 openen")
+                        },
+                        use_container_width=True,
+                    )
+                else:
+                    st.dataframe(
+                        res[toon_kol],
+                        column_config={
+                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                        },
+                        use_container_width=True,
+                    )
+
+                # Optionele export van de gevonden rijen
+                st.download_button(
+                    "⬇️ Download resultaten (CSV)",
+                    res[toon_kol].to_csv(index=False).encode("utf-8"),
+                    file_name=f"opzoek_{dn_in}_{datetime.today().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                )
