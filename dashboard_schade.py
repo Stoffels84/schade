@@ -992,72 +992,60 @@ with tab7:
 
     import pydeck as pdk
 
-    # --- 1) Maak een werk-DF en probeer lat/lon te garanderen ---
+    # --- 1) Werkdata klaarmaken ---
     df_map = df_filtered.copy()
 
-    # a) Splits eventuele samengestelde coördinaat-kolom naar lat/lon
-    combo_cols = [c for c in df_map.columns if str(c).strip().lower() in {"coördinaten", "coord", "coords", "coordinates"}]
-    if combo_cols and ("lat" not in df_map.columns or "lon" not in df_map.columns):
-        cc = combo_cols[0]
-        parts = df_map[cc].astype(str).str.split(",", n=1, expand=True)
-        if parts.shape[1] == 2:
-            df_map["lat"] = pd.to_numeric(parts[0], errors="coerce")
-            df_map["lon"] = pd.to_numeric(parts[1], errors="coerce")
-
-    # b) Normaliseer numeriek formaat (51.037413 kan als 51037413 binnenkomen)
+    # Controle: lat/lon bestaan en zijn numeriek
     def _norm_coord(x):
         v = pd.to_numeric(x, errors="coerce")
         if pd.isna(v):
             return v
         a = abs(v)
-        if a > 1000:      # typisch verlies van 6 decimalen
+        if a > 1000:   # bv. 51037413 ipv 51.037413
             return v / 1_000_000
-        if a > 180:       # soms 3 decimalen kwijt
+        if a > 180:    # bv. 51037 ipv 51.037
             return v / 1_000
         return v
 
-    for col in ("lat", "lon"):
-        if col in df_map.columns:
-            df_map[col] = df_map[col].apply(_norm_coord)
-
-    # c) Filter op geldige coördinaten
-    if "lat" not in df_map.columns or "lon" not in df_map.columns:
-        st.error("Kolommen 'lat' en 'lon' (of één samengestelde coördinatenkolom) ontbreken in de data.")
+    if "lat" in df_map.columns and "lon" in df_map.columns:
+        df_map["lat"] = df_map["lat"].apply(_norm_coord)
+        df_map["lon"] = df_map["lon"].apply(_norm_coord)
+    else:
+        st.error("⚠️ Kolommen 'lat' en 'lon' ontbreken in de data.")
         st.stop()
 
+    # Alleen geldige coördinaten
     df_map = df_map.dropna(subset=["lat", "lon"]).copy()
-    # Zorg dat het echt numeriek is
-    df_map["lat"] = pd.to_numeric(df_map["lat"], errors="coerce")
-    df_map["lon"] = pd.to_numeric(df_map["lon"], errors="coerce")
-    df_map = df_map.dropna(subset=["lat", "lon"])
 
     if df_map.empty:
-        st.info("Geen locaties met geldige coördinaten binnen de huidige filters.")
+        st.info("⚠️ Geen locaties met geldige coördinaten binnen de huidige filters.")
         st.stop()
 
-    # Datum als nette string voor tooltip
+    # Extra kolom voor nette datum in tooltip
     if "Datum" in df_map.columns:
         df_map["Datum_str"] = pd.to_datetime(df_map["Datum"], errors="coerce").dt.strftime("%d-%m-%Y")
     else:
         df_map["Datum_str"] = ""
 
-    # --- 2) Kaart-instellingen (kleine UI) ---
-    colA, colB, colC = st.columns([1,1,1])
+    # --- 2) UI controls ---
+    colA, colB = st.columns([1,1])
     with colA:
         layer_type = st.selectbox("Weergave", ["Punten", "Hexagon (clustering)"], index=0)
     with colB:
-        point_radius = st.slider("Straal punten (m)", 30, 300, 80, 10)
-    with colC:
-        hex_radius = st.slider("Hex-cel (m)", 50, 500, 150, 10)
+        radius = st.slider("Straal (m)", 30, 300, 80, 10)
 
-    # Kaart-centrering: gemiddelde van de punten, fallback Gent
+    # Kaart centreren (gemiddelde punten, fallback Gent)
     lat_center = df_map["lat"].mean() if df_map["lat"].notna().any() else 51.05
     lon_center = df_map["lon"].mean() if df_map["lon"].notna().any() else 3.72
 
-    view_state = pdk.ViewState(latitude=float(lat_center), longitude=float(lon_center), zoom=12, pitch=0)
+    view_state = pdk.ViewState(
+        latitude=float(lat_center),
+        longitude=float(lon_center),
+        zoom=12,
+        pitch=0
+    )
 
-    # --- 3) Laag aanmaken ---
-    layers = []
+    # --- 3) Tooltip ---
     tooltip = {
         "html": (
             "<b>📍 {Locatie_disp}</b><br/>"
@@ -1068,25 +1056,26 @@ with tab7:
         "style": {"backgroundColor": "white", "color": "black"}
     }
 
+    # --- 4) Layers ---
+    layers = []
     if layer_type == "Punten":
         layers.append(
             pdk.Layer(
                 "ScatterplotLayer",
                 data=df_map,
                 get_position="[lon, lat]",
-                get_radius=point_radius,
+                get_radius=radius,
                 get_fill_color="[200, 30, 0, 160]",
                 pickable=True,
             )
         )
     else:
-        # Hexagon clustering (aggregatie naar cellen)
         layers.append(
             pdk.Layer(
                 "HexagonLayer",
                 data=df_map,
                 get_position="[lon, lat]",
-                radius=hex_radius,
+                radius=radius,
                 elevation_scale=4,
                 elevation_range=[0, 2000],
                 extruded=True,
@@ -1094,28 +1083,16 @@ with tab7:
                 pickable=True,
             )
         )
-        # Combineer met kleine punten voor exacte klik-info
-        layers.append(
-            pdk.Layer(
-                "ScatterplotLayer",
-                data=df_map,
-                get_position="[lon, lat]",
-                get_radius=max(20, int(point_radius * 0.6)),
-                get_fill_color="[0, 80, 200, 120]",
-                pickable=True,
-            )
-        )
 
-    # --- 4) Render de kaart ---
-    st.pydeck_chart(
-        pdk.Deck(
-            map_style="mapbox://styles/mapbox/streets-v11",
-            initial_view_state=view_state,
-            layers=layers,
-            tooltip=tooltip
-        ),
-        use_container_width=True
+    # --- 5) Render kaart (CARTO basemap) ---
+    deck = pdk.Deck(
+        map_provider="carto",            # ✅ altijd gratis
+        map_style="positron",            # andere opties: "dark-matter", "voyager"
+        initial_view_state=view_state,
+        layers=layers,
+        tooltip=tooltip,
     )
 
-    # Kleine voetnoot/debug (optioneel)
+    st.pydeck_chart(deck, use_container_width=True)
+
     st.caption(f"📌 Getoonde punten: {len(df_map)}  ·  Centrum: {lat_center:.5f}, {lon_center:.5f}")
