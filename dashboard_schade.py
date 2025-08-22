@@ -366,9 +366,10 @@ with st.sidebar:
     st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken", "🔗 Analyse"]
 )
+
 
 
 
@@ -984,4 +985,170 @@ with tab6:
                         },
                         use_container_width=True,
                     )
+
+
+
+# ========= TAB 7: Analyse =========
+with tab7:
+    st.subheader("🔗 Analyse tussen locaties")
+
+    # Keuze van analyse
+    keuze = st.radio(
+        "Kies een analyse",
+        ["Gedeelde chauffeurs (locatie↔locatie)",
+         "Locatie × Voertuig (chi²)",
+         "Maandprofielen per locatie (heatmap)"],
+        index=0
+    )
+
+    # ---------- 1) Gedeelde chauffeurs ----------
+    if keuze == "Gedeelde chauffeurs (locatie↔locatie)":
+        st.caption("Locaties zijn verbonden als dezelfde chauffeur op beide locaties schade had (uniek per chauffeur).")
+
+        # Alleen benodigde kolommen en robuust filter
+        nodig = {"dienstnummer", "Locatie_disp"}
+        if not nodig.issubset(df_filtered.columns):
+            st.warning("Ontbrekende kolommen voor deze analyse.")
+        else:
+            tmp = df_filtered.dropna(subset=["dienstnummer", "Locatie_disp"]).copy()
+            tmp["dienstnummer"] = tmp["dienstnummer"].astype(str).str.strip()
+            tmp["Locatie_disp"] = tmp["Locatie_disp"].astype(str).str.strip()
+
+            # Unieke locaties per chauffeur
+            by_dn = (
+                tmp.groupby("dienstnummer")["Locatie_disp"]
+                   .apply(lambda s: sorted(set(s)))
+                   .reset_index()
+            )
+
+            # Tel paren (combinaties van 2) per chauffeur
+            from itertools import combinations
+            counts = {}
+            for _, row in by_dn.iterrows():
+                locs = row["Locatie_disp"]
+                if len(locs) < 2:
+                    continue
+                for a, b in combinations(locs, 2):
+                    key = (a, b)
+                    counts[key] = counts.get(key, 0) + 1
+
+            if not counts:
+                st.info("Geen gedeelde chauffeurs tussen locaties in de huidige filters.")
+            else:
+                # Naar DataFrame en sorteren
+                rel_df = (
+                    pd.DataFrame(
+                        [(a, b, w) for (a, b), w in counts.items()],
+                        columns=["Locatie A", "Locatie B", "gedeelde_chauffeurs"]
+                    )
+                    .sort_values("gedeelde_chauffeurs", ascending=False)
+                )
+
+                topN = st.slider("Toon top N relaties", 5, min(100, len(rel_df)), min(20, len(rel_df)))
+                st.dataframe(rel_df.head(topN), use_container_width=True)
+
+                # Klein netwerk-gevoel: matrix voor top locaties (optioneel)
+                st.markdown("**Matrix (Top locaties)** – aantal gedeelde chauffeurs")
+                # kies top K locaties o.b.v. eigen frequentie
+                freq_loc = tmp["Locatie_disp"].value_counts().head(15).index.tolist()
+                mat = pd.DataFrame(0, index=freq_loc, columns=freq_loc, dtype=int)
+                for (a, b), w in counts.items():
+                    if a in freq_loc and b in freq_loc:
+                        mat.loc[a, b] = w
+                        mat.loc[b, a] = w
+                # plot met matplotlib (geen seaborn per richtlijn)
+                fig, ax = plt.subplots(figsize=(8, 6))
+                im = ax.imshow(mat.values, aspect="auto")
+                ax.set_xticks(range(len(freq_loc))); ax.set_xticklabels(freq_loc, rotation=45, ha="right")
+                ax.set_yticks(range(len(freq_loc))); ax.set_yticklabels(freq_loc)
+                ax.set_title("Gedeelde chauffeurs tussen top-locaties")
+                fig.colorbar(im, ax=ax, label="aantal gedeelde chauffeurs")
+                plt.tight_layout()
+                st.pyplot(fig)
+
+    # ---------- 2) Locatie × Voertuig (chi²) ----------
+    elif keuze == "Locatie × Voertuig (chi²)":
+        st.caption("Toetst of voertuigtype en locatie onafhankelijk zijn. Een lage p-waarde (< 0.05) wijst op samenhang.")
+
+        if not {"Locatie_disp", "BusTram_disp"}.issubset(df_filtered.columns):
+            st.warning("Ontbrekende kolommen voor deze analyse.")
+        else:
+            ct = pd.crosstab(df_filtered["Locatie_disp"], df_filtered["BusTram_disp"])
+            st.markdown("**Contingentietabel (locatie × voertuig)**")
+            st.dataframe(ct, use_container_width=True)
+
+            # Chi-square: probeer scipy, anders fallback
+            p_value = None
+            try:
+                from scipy.stats import chi2_contingency
+                chi2, p_value, dof, expected = chi2_contingency(ct.values)
+            except Exception:
+                # eenvoudige handmatige benadering
+                import numpy as np
+                obs = ct.values.astype(float)
+                row_sums = obs.sum(axis=1, keepdims=True)
+                col_sums = obs.sum(axis=0, keepdims=True)
+                total = obs.sum()
+                expected = row_sums @ col_sums / total
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    chi2 = np.nansum((obs - expected) ** 2 / expected)
+                dof = (obs.shape[0] - 1) * (obs.shape[1] - 1)
+                # p-waarde inschatten is lastiger zonder scipy; we tonen chi2 & dof
+                p_value = None
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Chi²", f"{chi2:.2f}")
+            col2.metric("Vrijheidsgraden", dof)
+            col3.metric("p-waarde", f"{p_value:.4f}" if p_value is not None else "—")
+
+            if p_value is not None:
+                if p_value < 0.05:
+                    st.success("Resultaat: Significant verband (p < 0.05).")
+                else:
+                    st.info("Resultaat: Geen significant verband aangetoond (p ≥ 0.05).")
+            else:
+                st.info("Kon p-waarde niet berekenen zonder SciPy; gebruik bovenste Chi² & dof als indicatie.")
+
+    # ---------- 3) Maandprofielen per locatie ----------
+    else:
+        st.caption("Vergelijk het maandpatroon van locaties. Donkerder = meer schades in die maand.")
+        if "Datum" not in df_filtered.columns or df_filtered["Datum"].isna().all():
+            st.warning("Geen geldige datums beschikbaar.")
+        else:
+            dfm = df_filtered.dropna(subset=["Datum"]).copy()
+            maanden_nl = {
+                1:"jan",2:"feb",3:"mrt",4:"apr",5:"mei",6:"jun",
+                7:"jul",8:"aug",9:"sep",10:"okt",11:"nov",12:"dec"
+            }
+            dfm["Maand"] = dfm["Datum"].dt.month.map(maanden_nl)
+
+            pv = pd.pivot_table(
+                dfm, index="Locatie_disp", columns="Maand", values="Datum", aggfunc="count", fill_value=0
+            )
+
+            # Sorteer kolommen op kalender-volgorde
+            volg = ["jan","feb","mrt","apr","mei","jun","jul","aug","sep","okt","nov","dec"]
+            pv = pv.reindex(columns=volg).fillna(0)
+
+            # Focus op top N locaties (anders wordt het te hoog)
+            topN_loc = st.slider("Toon top N locaties (op totaal)", 10, min(50, len(pv)), min(20, len(pv)))
+            top_loc = pv.sum(axis=1).sort_values(ascending=False).head(topN_loc).index
+            pv_top = pv.loc[top_loc]
+
+            # Normaliseer per rij naar 0..1 voor patroonvergelijking (optioneel)
+            normeer = st.checkbox("Normaliseer per locatie (0..1)", value=True)
+            if normeer:
+                pv_plot = pv_top.div(pv_top.max(axis=1).replace(0, 1), axis=0)
+            else:
+                pv_plot = pv_top
+
+            # Plot met matplotlib
+            fig, ax = plt.subplots(figsize=(10, max(4, 0.35 * len(pv_plot))))
+            im = ax.imshow(pv_plot.values, aspect="auto")
+            ax.set_xticks(range(pv_plot.shape[1])); ax.set_xticklabels(pv_plot.columns)
+            ax.set_yticks(range(pv_plot.shape[0])); ax.set_yticklabels(pv_plot.index)
+            ax.set_title("Maandprofielen per locatie")
+            fig.colorbar(im, ax=ax, label="genormaliseerd aandeel" if normeer else "aantal")
+            plt.tight_layout()
+            st.pyplot(fig)
 
