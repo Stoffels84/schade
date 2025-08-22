@@ -461,8 +461,22 @@ with tab1:
                 low = max(1, left + 1)
                 titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
                 with st.expander(titel):
-                    # Toon 1 tabel i.p.v. veel markdown
+                    # Subset: alle rijen van deze groep chauffeurs
                     subset = df_filtered[df_filtered["volledige naam_disp"].isin(groep.index)]
+
+                    # 🔢 Nieuw: overzicht totaal aantal schades per chauffeur
+                    per_chauffeur = (
+                        subset.groupby("volledige naam_disp").size().sort_values(ascending=False)
+                    )
+                    st.markdown("**Overzicht per chauffeur (totaal aantal schades):**")
+                    st.dataframe(
+                        per_chauffeur.reset_index().rename(
+                            columns={"volledige naam_disp": "Chauffeur", 0: "Aantal schades"}
+                        ),
+                        use_container_width=True,
+                    )
+
+                    # Detailtabel
                     toon_tabel(
                         subset[["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]].dropna(how="all", axis=1),
                         ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"],
