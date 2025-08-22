@@ -286,9 +286,32 @@ with st.sidebar:
 
 
 # ========= Sidebar filters =========
-with st.sidebar:
-    st.header("🔍 Filters")
-    selected_teamcoaches = st.multiselect("Teamcoach", options=teamcoach_options, default=pref_tc)
+# Teamcoach filter met 'selecteer alles'
+select_all_coaches = st.checkbox("Alle teamcoaches selecteren", value=False)
+
+if select_all_coaches:
+    selected_teamcoaches = st.multiselect(
+        "Teamcoach", options=teamcoach_options, default=teamcoach_options
+    )
+else:
+    selected_teamcoaches = st.multiselect(
+        "Teamcoach", options=teamcoach_options, default=[]
+    )
+
+# Verplicht kiezen
+if not selected_teamcoaches:
+    st.warning("⚠️ Kies eerst minstens één teamcoach in de filters aan de linkerkant.")
+    st.stop()
+
+
+
+
+
+
+
+
+
+    
     selected_locaties    = st.multiselect("Locatie", options=locatie_options, default=pref_lo)
     selected_voertuigen  = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
     selected_kwartalen   = st.multiselect("Kwartaal", options=kwartaal_options, default=pref_kw)
