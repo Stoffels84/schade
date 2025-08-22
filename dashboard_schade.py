@@ -476,9 +476,7 @@ with tab1:
                         use_container_width=True,
                     )
 
-                    # Detailtabel
-                    toon_tabel(
-                        subset[["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"]].dropna(how="all", axis=1),
+                    ,
                         ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"],
                     )
                 shown += 1
