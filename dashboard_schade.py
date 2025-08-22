@@ -367,9 +367,10 @@ with st.sidebar:
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
 # ========= Tabs =========
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
+    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken", "🗺️ Kaart"]
 )
+
 
 
 # ========= PDF Export (per teamcoach) =========
@@ -984,3 +985,50 @@ with tab6:
                         },
                         use_container_width=True,
                     )
+
+# ========= TAB 7: Kaart =========
+with tab7:
+    st.subheader("🗺️ Schadegevallen op kaart")
+
+    if "lat" not in df_filtered.columns or "lon" not in df_filtered.columns:
+        st.error("Kolommen 'lat' en 'lon' ontbreken in de data. Voeg deze toe aan het tabblad BRON van Excel.")
+    else:
+        df_map = df_filtered.dropna(subset=["lat", "lon"]).copy()
+
+        if df_map.empty:
+            st.info("Geen locaties met coördinaten gevonden binnen de huidige filters.")
+        else:
+            import pydeck as pdk
+
+            # Startpositie = centrum van Gent
+            view_state = pdk.ViewState(
+                latitude=51.05,
+                longitude=3.72,
+                zoom=12,
+                pitch=0,
+            )
+
+            layer = pdk.Layer(
+                "ScatterplotLayer",
+                data=df_map,
+                get_position="[lon, lat]",
+                get_radius=80,  # straal in meters
+                get_fill_color="[200, 30, 0, 160]",
+                pickable=True,
+            )
+
+            tooltip = {
+                "html": "<b>📍 {Locatie_disp}</b><br/>"
+                        "👤 {volledige naam_disp}<br/>"
+                        "🗓️ {Datum}<br/>"
+                        "🚌 {BusTram_disp}",
+                "style": {"backgroundColor": "white", "color": "black"}
+            }
+
+            st.pydeck_chart(pdk.Deck(
+                map_style="mapbox://styles/mapbox/streets-v11",
+                initial_view_state=view_state,
+                layers=[layer],
+                tooltip=tooltip
+            ))
+
