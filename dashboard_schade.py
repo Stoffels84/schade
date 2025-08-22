@@ -504,7 +504,7 @@ with tab1:
 
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Aantal chauffeurs (automatisch)", totaal_chauffeurs_auto)
+            st.metric("Aantal chauffeurs (met schade)", totaal_chauffeurs_auto)
             handmatig_aantal = st.number_input(
                 "Handmatig aantal chauffeurs",
                 min_value=1,
