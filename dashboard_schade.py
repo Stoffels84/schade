@@ -367,7 +367,10 @@ with st.sidebar:
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
 # ========= Tabs =========
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto"])
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
+)
+
 
 # ========= PDF Export (per teamcoach) =========
 st.markdown("---")
