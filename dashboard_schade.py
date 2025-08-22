@@ -286,35 +286,30 @@ with st.sidebar:
 
 
 # ========= Sidebar filters =========
-# Teamcoach filter met 'selecteer alles'
-select_all_coaches = st.checkbox("Alle teamcoaches selecteren", value=False)
+# ========= Sidebar filters =========
+with st.sidebar:
+    st.header("🔍 Filters")
 
-if select_all_coaches:
-    selected_teamcoaches = st.multiselect(
-        "Teamcoach", options=teamcoach_options, default=teamcoach_options
+    # --- Teamcoach: lege default + 'Alle' in de dropdown ---
+    ALL_COACHES = "— Alle teamcoaches —"
+    teamcoach_opts_with_all = [ALL_COACHES] + teamcoach_options
+
+    selected_teamcoaches_raw = st.multiselect(
+        "Teamcoach",
+        options=teamcoach_opts_with_all,
+        default=[],  # leeg bij start
+        help="Kies één of meer teamcoaches of selecteer '— Alle teamcoaches —'."
     )
-else:
-    selected_teamcoaches = st.multiselect(
-        "Teamcoach", options=teamcoach_options, default=[]
-    )
+    # Vervang 'Alle' door de volledige lijst
+    if ALL_COACHES in selected_teamcoaches_raw:
+        selected_teamcoaches = teamcoach_options
+    else:
+        selected_teamcoaches = selected_teamcoaches_raw
 
-# Verplicht kiezen
-if not selected_teamcoaches:
-    st.warning("⚠️ Kies eerst minstens één teamcoach in de filters aan de linkerkant.")
-    st.stop()
-
-
-
-
-
-
-
-
-
-    
-    selected_locaties    = st.multiselect("Locatie", options=locatie_options, default=pref_lo)
-    selected_voertuigen  = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
-    selected_kwartalen   = st.multiselect("Kwartaal", options=kwartaal_options, default=pref_kw)
+    # --- Andere filters (ongewijzigd qua gedrag) ---
+    selected_locaties   = st.multiselect("Locatie",     options=locatie_options,  default=pref_lo)
+    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
+    selected_kwartalen  = st.multiselect("Kwartaal",    options=kwartaal_options, default=pref_kw)
 
     # Datum-bereik = gekozen kwartalen, anders volledige range
     st.markdown("### 🗓️ Datum")
@@ -330,6 +325,12 @@ if not selected_teamcoaches:
     if st.button("🔄 Reset filters"):
         qp.clear()
         st.rerun()
+
+# 👉 Verplicht minstens één teamcoach kiezen (nádat alle variabelen bestaan)
+if not selected_teamcoaches:
+    st.warning("⚠️ Kies eerst minstens één teamcoach in de filters (of selecteer ‘— Alle teamcoaches —’).")
+    st.stop()
+
 
 # ========= Filters toepassen =========
 sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
