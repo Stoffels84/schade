@@ -928,12 +928,10 @@ with tab5:
 with tab6:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
-    # We zoeken in de volledige dataset met geldige datums (df), niet alleen df_filtered
-    # zodat je altijd alles van die persoon ziet binnen de dataset.
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
 
-    # Normaliseer invoer -> enkel cijfers
-    dn_in = re.findall(r"\d+", str(zoek))  # pikt ook '41092 - Naam' op
+    # Normaliseer invoer -> alleen cijfers
+    dn_in = re.findall(r"\d+", str(zoek))
     dn_in = dn_in[0] if dn_in else ""
 
     if not dn_in:
@@ -942,28 +940,31 @@ with tab6:
         if "dienstnummer" not in df.columns:
             st.error("Kolom 'dienstnummer' ontbreekt in de data.")
         else:
-            res = (
-                df[df["dienstnummer"].astype(str).str.strip() == dn_in]
-                .copy()
-            )
-
-            # Kolommen samenstellen en link klikbaar maken
-            heeft_link = "Link" in res.columns
-            res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
-
-            # Toon alleen gevraagde velden
-            toon_kol = ["Datum", "Locatie_disp"]
-            if heeft_link:
-                toon_kol.append("URL")
+            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
 
             if res.empty:
                 st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
             else:
-                res = res.sort_values("Datum", ascending=False)
+                # Haal naam & teamcoach (eerste waarde uit res)
+                naam_chauffeur = res["volledige naam_disp"].iloc[0]
+                naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+
+                st.markdown(f"**👤 Chauffeur:** {naam_chauffeur}")
+                st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
+                st.markdown("---")
 
                 st.metric("Aantal schadegevallen", len(res))
 
-                # Klikbare link-kolom met nette label
+                # Resultaten tabel
+                heeft_link = "Link" in res.columns
+                res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
+
+                toon_kol = ["Datum", "Locatie_disp"]
+                if heeft_link:
+                    toon_kol.append("URL")
+
+                res = res.sort_values("Datum", ascending=False)
+
                 if heeft_link:
                     st.dataframe(
                         res[toon_kol],
@@ -983,11 +984,3 @@ with tab6:
                         },
                         use_container_width=True,
                     )
-
-                # Optionele export van de gevonden rijen
-                st.download_button(
-                    "⬇️ Download resultaten (CSV)",
-                    res[toon_kol].to_csv(index=False).encode("utf-8"),
-                    file_name=f"opzoek_{dn_in}_{datetime.today().strftime('%Y%m%d')}.csv",
-                    mime="text/csv",
-                )
