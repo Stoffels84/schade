@@ -817,6 +817,40 @@ with tab4:
 with tab5:
     st.subheader("📈 Pareto-analyse (80/20)")
 
+    # 📘 Uitlegtekst netjes opgemaakt
+    st.markdown("""
+    ### ℹ️ Wat is Pareto?
+    De **Pareto-analyse** is gebaseerd op het **80/20-principe**:
+
+    - **80% van de gevolgen** komt vaak uit **20% van de oorzaken**.  
+    - Met andere woorden: een klein aantal factoren heeft een **grote invloed**.  
+
+    In dit dashboard:  
+    ➡️ 80% van de schadegevallen kan vaak worden verklaard door een beperkt aantal **chauffeurs**, **locaties**, of **voertuigen**.
+
+    ---
+
+    ### 🔎 Hoe werkt de grafiek?
+    - De **blauwe balken** tonen het **aantal schadegevallen** per element (bv. per chauffeur).  
+    - De **rode stippellijn** toont de **80%-grens**.  
+    - De **lichtblauwe lijn** toont het **cumulatief percentage**.  
+
+    **Voorbeeld:**  
+    - Chauffeur A = 30 schadegevallen  
+    - Chauffeur B = 20 schadegevallen  
+    - Chauffeur C = 10 schadegevallen  
+
+    Samen = 60 → A heeft 50%, A+B samen = 83%.  
+    👉 Dus **2 chauffeurs veroorzaken al 80% van de schadegevallen**.  
+
+    ---
+
+    ### 🎯 Waarom nuttig?
+    - Je kan **prioriteiten stellen**: focus op de kleine groep die de meeste schade veroorzaakt.  
+    - Helpt om **coaching of acties gericht** in te zetten i.p.v. verspreid.  
+    """)
+
+    # Keuze dimensie
     dim_opties = {
         "Chauffeur": "volledige naam_disp",
         "Locatie": "Locatie_disp",
@@ -921,7 +955,6 @@ with tab5:
 
             st.markdown("#### Top 20 detail")
             st.dataframe(df_pareto.head(20))
-
 
 
 
