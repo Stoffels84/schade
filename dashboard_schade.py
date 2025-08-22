@@ -366,9 +366,8 @@ with st.sidebar:
     st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
-# ========= Tabs =========
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
-    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken", "🗺️ Kaart"]
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
 )
 
 
@@ -986,113 +985,3 @@ with tab6:
                         use_container_width=True,
                     )
 
-# ========= TAB 7: Kaart =========
-with tab7:
-    st.subheader("🗺️ Schadegevallen op kaart")
-
-    import pydeck as pdk
-
-    # --- 1) Werkdata klaarmaken ---
-    df_map = df_filtered.copy()
-
-    # Controle: lat/lon bestaan en zijn numeriek
-    def _norm_coord(x):
-        v = pd.to_numeric(x, errors="coerce")
-        if pd.isna(v):
-            return v
-        a = abs(v)
-        if a > 1000:   # bv. 51037413 ipv 51.037413
-            return v / 1_000_000
-        if a > 180:    # bv. 51037 ipv 51.037
-            return v / 1_000
-        return v
-
-    if "lat" in df_map.columns and "lon" in df_map.columns:
-        df_map["lat"] = df_map["lat"].apply(_norm_coord)
-        df_map["lon"] = df_map["lon"].apply(_norm_coord)
-    else:
-        st.error("⚠️ Kolommen 'lat' en 'lon' ontbreken in de data.")
-        st.stop()
-
-    # Alleen geldige coördinaten
-    df_map = df_map.dropna(subset=["lat", "lon"]).copy()
-
-    if df_map.empty:
-        st.info("⚠️ Geen locaties met geldige coördinaten binnen de huidige filters.")
-        st.stop()
-
-    # Extra kolom voor nette datum in tooltip
-    if "Datum" in df_map.columns:
-        df_map["Datum_str"] = pd.to_datetime(df_map["Datum"], errors="coerce").dt.strftime("%d-%m-%Y")
-    else:
-        df_map["Datum_str"] = ""
-
-    # --- 2) UI controls ---
-    colA, colB = st.columns([1,1])
-    with colA:
-        layer_type = st.selectbox("Weergave", ["Punten", "Hexagon (clustering)"], index=0)
-    with colB:
-        radius = st.slider("Straal (m)", 30, 300, 80, 10)
-
-    # Kaart centreren (gemiddelde punten, fallback Gent)
-    lat_center = df_map["lat"].mean() if df_map["lat"].notna().any() else 51.05
-    lon_center = df_map["lon"].mean() if df_map["lon"].notna().any() else 3.72
-
-    view_state = pdk.ViewState(
-        latitude=float(lat_center),
-        longitude=float(lon_center),
-        zoom=12,
-        pitch=0
-    )
-
-    # --- 3) Tooltip ---
-    tooltip = {
-        "html": (
-            "<b>📍 {Locatie_disp}</b><br/>"
-            "👤 {volledige naam_disp}<br/>"
-            "🗓️ {Datum_str}<br/>"
-            "🚌 {BusTram_disp}"
-        ),
-        "style": {"backgroundColor": "white", "color": "black"}
-    }
-
-    # --- 4) Layers ---
-    layers = []
-    if layer_type == "Punten":
-        layers.append(
-            pdk.Layer(
-                "ScatterplotLayer",
-                data=df_map,
-                get_position="[lon, lat]",
-                get_radius=radius,
-                get_fill_color="[200, 30, 0, 160]",
-                pickable=True,
-            )
-        )
-    else:
-        layers.append(
-            pdk.Layer(
-                "HexagonLayer",
-                data=df_map,
-                get_position="[lon, lat]",
-                radius=radius,
-                elevation_scale=4,
-                elevation_range=[0, 2000],
-                extruded=True,
-                coverage=1,
-                pickable=True,
-            )
-        )
-
-    # --- 5) Render kaart (CARTO basemap) ---
-    deck = pdk.Deck(
-        map_provider="carto",            # ✅ altijd gratis
-        map_style="positron",            # andere opties: "dark-matter", "voyager"
-        initial_view_state=view_state,
-        layers=layers,
-        tooltip=tooltip,
-    )
-
-    st.pydeck_chart(deck, use_container_width=True)
-
-    st.caption(f"📌 Getoonde punten: {len(df_map)}  ·  Centrum: {lat_center:.5f}, {lon_center:.5f}")
