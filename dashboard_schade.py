@@ -478,7 +478,6 @@ with tab1:
 
                     ,
                         ["Datum", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"],
-                    )
                 shown += 1
 
 # ---------- TAB 2: Teamcoach ----------
