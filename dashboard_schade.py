@@ -158,7 +158,8 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
 # ========= Gebruikersbestand (login) =========
 gebruikers = load_excel_fast("chauffeurs.xlsx")
-gebruikers.columns = gebruikers.columns.str.strip().str.lower()
+gebruikers.columns = gebruikers.columns.astype(str).str.strip().str.lower()
+
 
 kol_map = {}
 if "gebruikersnaam" in gebruikers.columns:
