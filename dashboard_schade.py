@@ -49,6 +49,7 @@ def load_excel_fast(path: str, sheet_name=None) -> pd.DataFrame:
     Snelle loader:
     - als .parquet nieuwer is dan Excel: lees parquet
     - anders: lees Excel en schrijf/overschrijf parquet
+    - geeft ALTIJD een DataFrame terug (nooit dict)
     """
     base, _ = os.path.splitext(path)
     pq_path = f"{base}.parquet"
@@ -60,6 +61,33 @@ def load_excel_fast(path: str, sheet_name=None) -> pd.DataFrame:
             return read_parquet_with_key(pq_path, m_parquet)
         except Exception:
             pass  # fallback naar Excel
+
+    # Excel lezen (let op: sheet_name alleen doorgeven als expliciet gezet)
+    try:
+        kwargs = {}
+        if sheet_name is not None:
+            kwargs["sheet_name"] = sheet_name
+        df = read_excel_with_key(path, m_excel, **kwargs)
+
+        # Als er toch een dict is (sheet_name=None → alle sheets), neem eerste sheet
+        if isinstance(df, dict):
+            # pak eerste sheet in volgorde
+            first_key = next(iter(df))
+            df = df[first_key]
+
+        # probeer parquet te schrijven voor volgende keer
+        try:
+            df.to_parquet(pq_path, index=False)
+        except Exception:
+            pass
+        return df
+    except FileNotFoundError:
+        st.error(f"Bestand niet gevonden: {path}")
+        st.stop()
+    except Exception as e:
+        st.error(f"Kon '{path}' niet lezen: {e}")
+        st.stop()
+
 
     # Excel lezen (key met mtime)
     try:
