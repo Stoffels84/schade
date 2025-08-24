@@ -286,51 +286,44 @@ with st.sidebar:
 
 
 # ========= Sidebar filters =========
-# ========= Sidebar filters =========
 with st.sidebar:
     st.header("🔍 Filters")
 
-    # --- Teamcoach: lege default + 'Alle' in de dropdown ---
+    # Helper (voorkomt herhaling)
+    def multiselect_all(label, options, all_label, key):
+        opts_with_all = [all_label] + options
+        picked_raw = st.multiselect(label, options=opts_with_all, default=[all_label], key=key)
+        # Kies alles als "Alle" is geselecteerd of als de selectie leeg is
+        picked = options if (all_label in picked_raw or len(picked_raw) == 0) else picked_raw
+        return picked
+
+    # Teamcoach
     ALL_COACHES = "— Alle teamcoaches —"
-    teamcoach_opts_with_all = [ALL_COACHES] + teamcoach_options
-
-    selected_teamcoaches_raw = st.multiselect(
-        "Teamcoach",
-        options=teamcoach_opts_with_all,
-        default=[],  # leeg bij start
-        help="Kies één of meer teamcoaches of selecteer '— Alle teamcoaches —'."
+    selected_teamcoaches = multiselect_all(
+        "Teamcoach", teamcoach_options, ALL_COACHES, key="filter_teamcoach"
     )
-    # Vervang 'Alle' door de volledige lijst
-    if ALL_COACHES in selected_teamcoaches_raw:
-        selected_teamcoaches = teamcoach_options
-    else:
-        selected_teamcoaches = selected_teamcoaches_raw
 
-    # --- Andere filters (ongewijzigd qua gedrag) ---
-    selected_locaties   = st.multiselect("Locatie",     options=locatie_options,  default=pref_lo)
-    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
-    selected_kwartalen  = st.multiselect("Kwartaal",    options=kwartaal_options, default=pref_kw)
+    # Locatie
+    ALL_LOCATIONS = "— Alle locaties —"
+    selected_locaties = multiselect_all(
+        "Locatie", locatie_options, ALL_LOCATIONS, key="filter_locatie"
+    )
 
-    # Datum-bereik = gekozen kwartalen, anders volledige range
+    # Voertuig (optioneel ook met 'Alle')
+    ALL_VEHICLES = "— Alle voertuigen —"
+    selected_voertuigen = multiselect_all(
+        "Voertuigtype", voertuig_options, ALL_VEHICLES, key="filter_voertuig"
+    )
 
-    if selected_kwartalen:
-        sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
-        date_from = sel_periods_idx.start_time.min().date()
-        date_to   = sel_periods_idx.end_time.max().date()
-    else:
-        date_from = df["Datum"].min().date()
-        date_to   = df["Datum"].max().date()
+    # Kwartaal
+    ALL_QUARTERS = "— Alle kwartalen —"
+    selected_kwartalen = multiselect_all(
+        "Kwartaal", kwartaal_options, ALL_QUARTERS, key="filter_kwartaal"
+    )
 
-    # Reset-knop
     if st.button("🔄 Reset filters"):
-        qp.clear()
+        st.query_params.clear()
         st.rerun()
-
-# 👉 Verplicht minstens één teamcoach kiezen (nádat alle variabelen bestaan)
-if not selected_teamcoaches:
-    st.warning("⚠️ Kies eerst minstens één teamcoach in de filters (of selecteer ‘— Alle teamcoaches —’).")
-    st.stop()
-
 
 # ========= Filters toepassen =========
 sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
