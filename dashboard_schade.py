@@ -337,35 +337,6 @@ pref_kw = _clean_list(qp.get_all("kwartaal"),  kwartaal_options)  or kwartaal_op
 with st.sidebar:
     st.image("logo.png", use_container_width=True)
 
-with st.sidebar:
-    st.header("🔍 Filters")
-
-    ALL_COACHES = "— Alle teamcoaches —"
-    teamcoach_opts_with_all = [ALL_COACHES] + teamcoach_options
-
-    selected_teamcoaches_raw = st.multiselect(
-        "Teamcoach",
-        options=teamcoach_opts_with_all,
-        default=[],  # leeg bij start
-        help="Kies één of meer teamcoaches of selecteer '— Alle teamcoaches —'."
-    )
-    selected_teamcoaches = teamcoach_options if ALL_COACHES in selected_teamcoaches_raw else selected_teamcoaches_raw
-
-    selected_locaties   = st.multiselect("Locatie",      options=locatie_options,  default=pref_lo)
-    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
-    selected_kwartalen  = st.multiselect("Kwartaal",     options=kwartaal_options, default=pref_kw)
-
-    if selected_kwartalen:
-        sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
-        date_from = sel_periods_idx.start_time.min().date()
-        date_to   = sel_periods_idx.end_time.max().date()
-    else:
-        date_from = df["Datum"].min().date()
-        date_to   = df["Datum"].max().date()
-
-    if st.button("🔄 Reset filters"):
-        qp.clear()
-        st.rerun()
 
 if not selected_teamcoaches:
     st.warning("⚠️ Kies eerst minstens één teamcoach in de filters (of selecteer ‘— Alle teamcoaches —’).")
