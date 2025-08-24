@@ -282,66 +282,70 @@ pref_kw = _clean_list(qp.get_all("kwartaal"),  kwartaal_options)  or kwartaal_op
 
 with st.sidebar:
     st.image("logo.png", use_container_width=True)
-
-
-
-# ========= Sidebar filters =========
-with st.sidebar:
     st.header("🔍 Filters")
 
-    # Helper (voorkomt herhaling)
+    # Helperfunctie: multiselect met "Alle"-optie
     def multiselect_all(label, options, all_label, key):
         opts_with_all = [all_label] + options
         picked_raw = st.multiselect(label, options=opts_with_all, default=[all_label], key=key)
-        # Kies alles als "Alle" is geselecteerd of als de selectie leeg is
         picked = options if (all_label in picked_raw or len(picked_raw) == 0) else picked_raw
         return picked
 
     # Teamcoach
-    ALL_COACHES = "— Alle teamcoaches —"
     selected_teamcoaches = multiselect_all(
-        "Teamcoach", teamcoach_options, ALL_COACHES, key="filter_teamcoach"
+        "Teamcoach", teamcoach_options, "— Alle teamcoaches —", key="filter_teamcoach"
     )
 
     # Locatie
-    ALL_LOCATIONS = "— Alle locaties —"
     selected_locaties = multiselect_all(
-        "Locatie", locatie_options, ALL_LOCATIONS, key="filter_locatie"
+        "Locatie", locatie_options, "— Alle locaties —", key="filter_locatie"
     )
 
-    # Voertuig (optioneel ook met 'Alle')
-    ALL_VEHICLES = "— Alle voertuigen —"
+    # Voertuig
     selected_voertuigen = multiselect_all(
-        "Voertuigtype", voertuig_options, ALL_VEHICLES, key="filter_voertuig"
+        "Voertuigtype", voertuig_options, "— Alle voertuigen —", key="filter_voertuig"
     )
 
     # Kwartaal
-    ALL_QUARTERS = "— Alle kwartalen —"
     selected_kwartalen = multiselect_all(
-        "Kwartaal", kwartaal_options, ALL_QUARTERS, key="filter_kwartaal"
+        "Kwartaal", kwartaal_options, "— Alle kwartalen —", key="filter_kwartaal"
     )
+
+    # Periode afleiden uit kwartalen of volledige dataset
+    if selected_kwartalen:
+        sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
+        date_from = sel_periods_idx.start_time.min().normalize()
+        date_to   = sel_periods_idx.end_time.max().normalize()
+    else:
+        date_from = df["Datum"].min().normalize()
+        date_to   = df["Datum"].max().normalize()
 
     if st.button("🔄 Reset filters"):
         st.query_params.clear()
         st.rerun()
 
-# ========= Filters toepassen =========
-sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
+# === Filters toepassen ===
+apply_quarters = bool(selected_kwartalen)
+sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if apply_quarters else None
 
 mask = (
-    df["teamcoach_disp"].isin(selected_teamcoaches) &
-    df["Locatie_disp"].isin(selected_locaties) &
-    df["BusTram_disp"].isin(selected_voertuigen) &
-    (df["KwartaalP"].isin(sel_periods) if len(sel_periods) > 0 else True)
+    df["teamcoach_disp"].isin(selected_teamcoaches)
+    & df["Locatie_disp"].isin(selected_locaties)
+    & df["BusTram_disp"].isin(selected_voertuigen)
+    & (df["KwartaalP"].isin(sel_periods) if apply_quarters else True)
 )
-df_filtered = df[mask].copy()
+df_filtered = df.loc[mask]
 
-mask_date = (df_filtered["Datum"].dt.date >= date_from) & (df_filtered["Datum"].dt.date <= date_to)
-df_filtered = df_filtered[mask_date].copy()
+# Datumfilter
+start = pd.to_datetime(date_from)
+end   = pd.to_datetime(date_to) + pd.Timedelta(days=1)  # inclusief einddag
+mask_date = (df_filtered["Datum"] >= start) & (df_filtered["Datum"] < end)
+df_filtered = df_filtered.loc[mask_date]
 
 if df_filtered.empty:
     st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     st.stop()
+
 
 # ========= KPI + export =========
 st.metric("Totaal aantal schadegevallen", len(df_filtered))
