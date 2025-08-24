@@ -1,9 +1,5 @@
-# ==========================================
-# Schadegevallen Dashboard — Performance Editie
-# ==========================================
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from io import BytesIO
 from reportlab.lib.pagesizes import A4
@@ -12,7 +8,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 import tempfile
 import plotly.express as px
-import plotly.graph_objects as go
 import hashlib
 from datetime import datetime
 import os
@@ -27,77 +22,11 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 def hash_wachtwoord(wachtwoord: str) -> str:
     return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
 
-def _file_mtime(path: str) -> float:
-    try:
-        return os.path.getmtime(path)
-    except Exception:
-        return -1.0
-
 @st.cache_data(show_spinner=False)
-def read_excel_with_key(path, mtime, **kwargs):
-    # mtime in cache-key: reload pas bij wijziging
-    df = pd.read_excel(path, **kwargs)
-    return df
-
-@st.cache_data(show_spinner=False)
-def read_parquet_with_key(path, mtime):
-    df = pd.read_parquet(path)
-    return df
-
-def load_excel_fast(path: str, sheet_name=None) -> pd.DataFrame:
-    """
-    Snelle loader:
-    - als .parquet nieuwer is dan Excel: lees parquet
-    - anders: lees Excel en schrijf/overschrijf parquet
-    - geeft ALTIJD een DataFrame terug (nooit dict)
-    """
-    base, _ = os.path.splitext(path)
-    pq_path = f"{base}.parquet"
-    m_excel = _file_mtime(path)
-    m_parquet = _file_mtime(pq_path)
-
-    if m_parquet > m_excel and m_parquet != -1:
-        try:
-            return read_parquet_with_key(pq_path, m_parquet)
-        except Exception:
-            pass  # fallback naar Excel
-
-    # Excel lezen (let op: sheet_name alleen doorgeven als expliciet gezet)
+def load_excel(path, **kwargs):
+    """Veilig Excel-bestand inladen met caching."""
     try:
-        kwargs = {}
-        if sheet_name is not None:
-            kwargs["sheet_name"] = sheet_name
-        df = read_excel_with_key(path, m_excel, **kwargs)
-
-        # Als er toch een dict is (sheet_name=None → alle sheets), neem eerste sheet
-        if isinstance(df, dict):
-            # pak eerste sheet in volgorde
-            first_key = next(iter(df))
-            df = df[first_key]
-
-        # probeer parquet te schrijven voor volgende keer
-        try:
-            df.to_parquet(pq_path, index=False)
-        except Exception:
-            pass
-        return df
-    except FileNotFoundError:
-        st.error(f"Bestand niet gevonden: {path}")
-        st.stop()
-    except Exception as e:
-        st.error(f"Kon '{path}' niet lezen: {e}")
-        st.stop()
-
-
-    # Excel lezen (key met mtime)
-    try:
-        df = read_excel_with_key(path, m_excel, sheet_name=sheet_name)
-        # probeer parquet te schrijven voor volgende keer
-        try:
-            df.to_parquet(pq_path, index=False)
-        except Exception:
-            pass
-        return df
+        return pd.read_excel(path, **kwargs)
     except FileNotFoundError:
         st.error(f"Bestand niet gevonden: {path}")
         st.stop()
@@ -106,6 +35,7 @@ def load_excel_fast(path: str, sheet_name=None) -> pd.DataFrame:
         st.stop()
 
 def naam_naar_dn(naam: str) -> str | None:
+    """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
     if pd.isna(naam):
         return None
     s = str(naam).strip()
@@ -113,25 +43,48 @@ def naam_naar_dn(naam: str) -> str | None:
     return m.group(1) if m else None
 
 def toon_chauffeur(x):
+    """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
     if x is None or pd.isna(x):
         return "onbekend"
     s = str(x).strip()
     if not s or s.lower() in {"nan", "none", "<na>"}:
         return "onbekend"
-    s = re.sub(r"^\s*\d+\s*-\s*", "", s)  # strip '1234 - '
+    # strip '1234 - ' of '1234-'
+    s = re.sub(r"^\s*\d+\s*-\s*", "", s)
     return s
 
 def safe_name(x) -> str:
+    """Netjes tonen; vermijd 'nan'/'none'/lege strings."""
     s = "" if x is pd.NA else str(x or "").strip()
     return "onbekend" if s.lower() in {"nan", "none", ""} else s
 
 def _parse_excel_dates(series: pd.Series) -> pd.Series:
-    # Snelle parser met cache; fallback vrijwel nooit nodig
-    return pd.to_datetime(series, errors="coerce", dayfirst=True, cache=True)
+    """Robuuste datumparser: probeer EU (dayfirst) en val terug op US (monthfirst)."""
+    d1 = pd.to_datetime(series, errors="coerce", dayfirst=True)
+    need_retry = d1.isna()
+    if need_retry.any():
+        d2 = pd.to_datetime(series[need_retry], errors="coerce", dayfirst=False)
+        d1.loc[need_retry] = d2
+    return d1
 
+# Kleine helper om hyperlinks uit Excel-formules te halen
 HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
+def extract_url(x) -> str | None:
+    if pd.isna(x):
+        return None
+    s = str(x).strip()
+    if s.startswith(("http://", "https://")):
+        return s
+    m = HYPERLINK_RE.search(s)
+    return m.group(1) if m else None
 
-def status_van_chauffeur(naam: str, gecoachte_ids: set[str], coaching_ids: set[str]) -> str:
+# ========= Kleuren =========
+COLOR_GEEL  = "#FFD54F"  # voltooide coaching
+COLOR_BLAUW = "#2196F3"  # in coaching
+COLOR_MIX   = "#7E57C2"  # beide
+COLOR_GRIJS = "#BDBDBD"  # geen
+
+def status_van_chauffeur(naam: str) -> str:
     dn = naam_naar_dn(naam)
     if not dn:
         return "Geen"
@@ -149,7 +102,7 @@ def status_van_chauffeur(naam: str, gecoachte_ids: set[str], coaching_ids: set[s
 def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
-# ========= Coachingslijst =========
+# ========= Coachingslijst inlezen (Voltooid/Coaching) =========
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
@@ -185,39 +138,40 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     return ids_geel, ids_blauw, None
 
 # ========= Gebruikersbestand (login) =========
-gebruikers = load_excel_fast("chauffeurs.xlsx")
-gebruikers.rename(columns=lambda c: str(c).strip().lower(), inplace=True)
+gebruikers_df = load_excel("chauffeurs.xlsx")
+gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()
 
-
-
+# normaliseer kolommen (login/wachtwoord varianten)
 kol_map = {}
-if "gebruikersnaam" in gebruikers.columns:
+if "gebruikersnaam" in gebruikers_df.columns:
     kol_map["gebruikersnaam"] = "gebruikersnaam"
-elif "login" in gebruikers.columns:
+elif "login" in gebruikers_df.columns:
     kol_map["login"] = "gebruikersnaam"
 
-if "paswoord" in gebruikers.columns:
+if "paswoord" in gebruikers_df.columns:
     kol_map["paswoord"] = "paswoord"
-elif "wachtwoord" in gebruikers.columns:
+elif "wachtwoord" in gebruikers_df.columns:
     kol_map["wachtwoord"] = "paswoord"
 
 for c in ["rol", "dienstnummer", "laatste login"]:
-    if c in gebruikers.columns:
+    if c in gebruikers_df.columns:
         kol_map[c] = c
 
-gebruikers = gebruikers.rename(columns=kol_map)
+gebruikers_df = gebruikers_df.rename(columns=kol_map)
 
+# Vereisten check
 vereist_login_kolommen = {"gebruikersnaam", "paswoord"}
-missend_login = [c for c in vereist_login_kolommen if c not in gebruikers.columns]
+missend_login = [c for c in vereist_login_kolommen if c not in gebruikers_df.columns]
 if missend_login:
     st.error(f"Login configuratie onvolledig. Ontbrekende kolommen (na normalisatie): {', '.join(missend_login)}")
     st.stop()
 
-gebruikers["gebruikersnaam"] = gebruikers["gebruikersnaam"].astype(str).str.strip()
-gebruikers["paswoord"] = gebruikers["paswoord"].astype(str).str.strip()
+# Strings netjes
+gebruikers_df["gebruikersnaam"] = gebruikers_df["gebruikersnaam"].astype(str).str.strip()
+gebruikers_df["paswoord"] = gebruikers_df["paswoord"].astype(str).str.strip()
 for c in ["rol", "dienstnummer", "laatste login"]:
-    if c not in gebruikers.columns:
-        gebruikers[c] = pd.NA
+    if c not in gebruikers_df.columns:
+        gebruikers_df[c] = pd.NA
 
 # Session login status
 if "logged_in" not in st.session_state:
@@ -228,7 +182,7 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
     username = st.text_input("Gebruikersnaam")
     password = st.text_input("Wachtwoord", type="password")
     if st.button("Log in"):
-        rij = gebruikers.loc[gebruikers["gebruikersnaam"] == str(username).strip()]
+        rij = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == str(username).strip()]
         if not rij.empty:
             opgeslagen = str(rij["paswoord"].iloc[0])
             ok = (opgeslagen == str(password)) or (opgeslagen == hash_wachtwoord(password))
@@ -236,10 +190,10 @@ if LOGIN_ACTIEF and not st.session_state.logged_in:
                 st.session_state.logged_in = True
                 st.session_state.username = str(username).strip()
                 st.success("✅ Ingelogd!")
-                if "laatste login" in gebruikers.columns:
+                if "laatste login" in gebruikers_df.columns:
                     try:
-                        gebruikers.loc[rij.index, "laatste login"] = datetime.now()
-                        gebruikers.to_excel("chauffeurs.xlsx", index=False)
+                        gebruikers_df.loc[rij.index, "laatste login"] = datetime.now()
+                        gebruikers_df.to_excel("chauffeurs.xlsx", index=False)
                     except Exception as e:
                         st.warning(f"Kon 'laatste login' niet opslaan: {e}")
                 st.rerun()
@@ -255,103 +209,52 @@ else:
 
 # Rol + naam
 if not LOGIN_ACTIEF:
-    rol = "teamcoach"; naam_login = "demo"
+    rol = "teamcoach"; naam = "demo"
 else:
-    ingelogde_info = gebruikers.loc[gebruikers["gebruikersnaam"] == st.session_state.username].iloc[0]
+    ingelogde_info = gebruikers_df.loc[gebruikers_df["gebruikersnaam"] == st.session_state.username].iloc[0]
     rol = str(ingelogde_info.get("rol", "teamcoach")).strip()
     if rol == "chauffeur":
-        naam_login = str(ingelogde_info.get("dienstnummer", ingelogde_info["gebruikersnaam"]))
+        naam = str(ingelogde_info.get("dienstnummer", ingelogde_info["gebruikersnaam"]))
     else:
-        naam_login = str(ingelogde_info["gebruikersnaam"]).strip()
+        naam = str(ingelogde_info["gebruikersnaam"]).strip()
 
 # ========= Data laden =========
-raw = load_excel_fast("schade met macro.xlsm", sheet_name="BRON")
-raw = raw.copy()  # éénmalige copy voor bewerking
+raw = load_excel("schade met macro.xlsm", sheet_name="BRON").copy()
 raw.columns = raw.columns.str.strip()
 
-# parse datums
-if "Datum" not in raw.columns:
-    st.error("Kolom 'Datum' ontbreekt in de brondata.")
-    st.stop()
+# -- parse datums robuust
 raw["Datum"] = _parse_excel_dates(raw["Datum"])
 
-# normaliseer relevante kolommen
+# -- normaliseer relevante kolommen (als string; nog NIET filteren op leeg)
 for col in ["volledige naam", "teamcoach", "Locatie", "Bus/ Tram", "Link"]:
     if col in raw.columns:
         raw[col] = raw[col].astype("string").str.strip()
 
-# filter op geldige datums
-df = raw[raw["Datum"].notna()]
+# --- df_for_options: ALLE rijen met geldige datum (voor kwartaal-lijst)
+df_for_options = raw[raw["Datum"].notna()].copy()
+df_for_options["KwartaalP"] = df_for_options["Datum"].dt.to_period("Q")
 
-# display-kolommen + categoricals
-df["volledige naam_disp"] = df["volledige naam"].map(safe_name)
-df["teamcoach_disp"]      = df["teamcoach"].map(safe_name)
-df["Locatie_disp"]        = df["Locatie"].map(safe_name)
-df["BusTram_disp"]        = df["Bus/ Tram"].map(safe_name)
+# --- df: analyses (alleen datums moeten geldig zijn; lege velden worden 'onbekend')
+df = raw[raw["Datum"].notna()].copy()
 
-for c in ["volledige naam_disp","teamcoach_disp","Locatie_disp","BusTram_disp"]:
-    df[c] = df[c].astype("category")
+# Display-kolommen met 'onbekend'
+df["volledige naam_disp"] = df["volledige naam"].apply(safe_name)
+df["teamcoach_disp"]      = df["teamcoach"].apply(safe_name)
+df["Locatie_disp"]        = df["Locatie"].apply(safe_name)
+df["BusTram_disp"]        = df["Bus/ Tram"].apply(safe_name)
 
-# afgeleiden
-df["dienstnummer"] = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False).astype("string").str.strip()
+# Overige afgeleiden
+dn = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False)
+df["dienstnummer"] = dn.astype("string").str.strip()
 df["KwartaalP"]    = df["Datum"].dt.to_period("Q")
 df["Kwartaal"]     = df["KwartaalP"].astype(str)
 
-# vectorized links (Link_url)
-if "Link" in df.columns:
-    s = df["Link"].astype("string").str.strip()
-    direct = s.str.startswith(("http://", "https://"), na=False)
-    df["Link_url"] = s.where(direct, s.str.extract(HYPERLINK_RE, expand=False))
-else:
-    df["Link_url"] = pd.NA
-
-
-
-
-#with st.sidebar:
-    st.header("🔍 Filters")
-
-    # Helper (voorkomt herhaling)
-    def multiselect_all(label, options, all_label, key):
-        opts_with_all = [all_label] + options
-        picked_raw = st.multiselect(label, options=opts_with_all, default=[all_label], key=key)
-        # Kies alles als "Alle" is geselecteerd of als de selectie leeg is
-        picked = options if (all_label in picked_raw or len(picked_raw) == 0) else picked_raw
-        return picked
-
-    # Teamcoach
-    ALL_COACHES = "— Alle teamcoaches —"
-    selected_teamcoaches = multiselect_all(
-        "Teamcoach", teamcoach_options, ALL_COACHES, key="filter_teamcoach"
-    )
-
-    # Locatie
-    ALL_LOCATIONS = "— Alle locaties —"
-    selected_locaties = multiselect_all(
-        "Locatie", locatie_options, ALL_LOCATIONS, key="filter_locatie"
-    )
-
-    # Voertuig (optioneel ook met 'Alle')
-    ALL_VEHICLES = "— Alle voertuigen —"
-    selected_voertuigen = multiselect_all(
-        "Voertuigtype", voertuig_options, ALL_VEHICLES, key="filter_voertuig"
-    )
-
-    # Kwartaal
-    ALL_QUARTERS = "— Alle kwartalen —"
-    selected_kwartalen = multiselect_all(
-        "Kwartaal", kwartaal_options, ALL_QUARTERS, key="filter_kwartaal"
-    )
-
-    if st.button("🔄 Reset filters"):
-        st.query_params.clear()
-        st.rerun()
- ========= Coachingslijst =========
+# ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
 if coach_warn:
     st.sidebar.warning(f"⚠️ {coach_warn}")
 
-# Flags op df
+# Flags op df (optioneel)
 df["gecoacht_geel"]  = df["dienstnummer"].astype(str).isin(gecoachte_ids)
 df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 
@@ -359,17 +262,19 @@ df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
 st.title("📊 Schadegevallen Dashboard")
 st.caption("🟡 = voltooide coaching · 🔵 = in coaching (lopend)")
 
-# ========= Query params & opties =========
+# ========= Query params presets =========
 qp = st.query_params  # Streamlit 1.32+
+
 def _clean_list(values, allowed):
     return [v for v in (values or []) if v in allowed]
 
-df_for_options = df  # al gefilterd op geldige datums
-teamcoach_options = sorted(df["teamcoach_disp"].dropna().cat.categories.tolist() if hasattr(df["teamcoach_disp"], "cat") else df["teamcoach_disp"].dropna().unique().tolist())
-locatie_options   = sorted(df["Locatie_disp"].dropna().cat.categories.tolist() if hasattr(df["Locatie_disp"], "cat") else df["Locatie_disp"].dropna().unique().tolist())
-voertuig_options  = sorted(df["BusTram_disp"].dropna().cat.categories.tolist() if hasattr(df["BusTram_disp"], "cat") else df["BusTram_disp"].dropna().unique().tolist())
+# Opties (komen uit display-kolommen zodat 'onbekend' selecteerbaar is)
+teamcoach_options = sorted(df["teamcoach_disp"].dropna().unique().tolist())
+locatie_options   = sorted(df["Locatie_disp"].dropna().unique().tolist())
+voertuig_options  = sorted(df["BusTram_disp"].dropna().unique().tolist())
 kwartaal_options  = sorted(df_for_options["KwartaalP"].dropna().astype(str).unique().tolist())
 
+# Prefs uit URL
 pref_tc = _clean_list(qp.get_all("teamcoach"), teamcoach_options) or teamcoach_options
 pref_lo = _clean_list(qp.get_all("locatie"),  locatie_options)  or locatie_options
 pref_vh = _clean_list(qp.get_all("voertuig"),  voertuig_options) or voertuig_options
@@ -379,21 +284,67 @@ with st.sidebar:
     st.image("logo.png", use_container_width=True)
 
 
+
+# ========= Sidebar filters =========
+# ========= Sidebar filters =========
+with st.sidebar:
+    st.header("🔍 Filters")
+
+    # --- Teamcoach: lege default + 'Alle' in de dropdown ---
+    ALL_COACHES = "— Alle teamcoaches —"
+    teamcoach_opts_with_all = [ALL_COACHES] + teamcoach_options
+
+    selected_teamcoaches_raw = st.multiselect(
+        "Teamcoach",
+        options=teamcoach_opts_with_all,
+        default=[],  # leeg bij start
+        help="Kies één of meer teamcoaches of selecteer '— Alle teamcoaches —'."
+    )
+    # Vervang 'Alle' door de volledige lijst
+    if ALL_COACHES in selected_teamcoaches_raw:
+        selected_teamcoaches = teamcoach_options
+    else:
+        selected_teamcoaches = selected_teamcoaches_raw
+
+    # --- Andere filters (ongewijzigd qua gedrag) ---
+    selected_locaties   = st.multiselect("Locatie",     options=locatie_options,  default=pref_lo)
+    selected_voertuigen = st.multiselect("Voertuigtype", options=voertuig_options, default=pref_vh)
+    selected_kwartalen  = st.multiselect("Kwartaal",    options=kwartaal_options, default=pref_kw)
+
+    # Datum-bereik = gekozen kwartalen, anders volledige range
+
+    if selected_kwartalen:
+        sel_periods_idx = pd.PeriodIndex(selected_kwartalen, freq="Q")
+        date_from = sel_periods_idx.start_time.min().date()
+        date_to   = sel_periods_idx.end_time.max().date()
+    else:
+        date_from = df["Datum"].min().date()
+        date_to   = df["Datum"].max().date()
+
+    # Reset-knop
+    if st.button("🔄 Reset filters"):
+        qp.clear()
+        st.rerun()
+
+# 👉 Verplicht minstens één teamcoach kiezen (nádat alle variabelen bestaan)
 if not selected_teamcoaches:
     st.warning("⚠️ Kies eerst minstens één teamcoach in de filters (of selecteer ‘— Alle teamcoaches —’).")
     st.stop()
 
-# ========= Filters toepassen (zonder onnodige copies) =========
+
+# ========= Filters toepassen =========
 sel_periods = pd.PeriodIndex(selected_kwartalen, freq="Q") if selected_kwartalen else pd.PeriodIndex([], freq="Q")
+
 mask = (
     df["teamcoach_disp"].isin(selected_teamcoaches) &
     df["Locatie_disp"].isin(selected_locaties) &
     df["BusTram_disp"].isin(selected_voertuigen) &
     (df["KwartaalP"].isin(sel_periods) if len(sel_periods) > 0 else True)
 )
-df_filtered = df[mask]
+df_filtered = df[mask].copy()
+
 mask_date = (df_filtered["Datum"].dt.date >= date_from) & (df_filtered["Datum"].dt.date <= date_to)
-df_filtered = df_filtered[mask_date]
+df_filtered = df_filtered[mask_date].copy()
 
 if df_filtered.empty:
     st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
@@ -415,16 +366,13 @@ with st.sidebar:
     st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
-# ========= Precomputes voor tabs =========
-counts_by_driver   = df_filtered["volledige naam_disp"].value_counts()
-counts_by_coach    = df_filtered["teamcoach_disp"].value_counts()
-counts_by_vehicle  = df_filtered["BusTram_disp"].value_counts()
-counts_by_location = df_filtered["Locatie_disp"].value_counts()
-
-# ========= Tabs =========
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
     ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
 )
+
+
+
+
 
 # ========= PDF Export (per teamcoach) =========
 st.markdown("---")
@@ -433,22 +381,25 @@ pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options
 generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
-    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp", "Link_url"]
-    schade_pdf = df_filtered[df_filtered["teamcoach_disp"] == pdf_coach][kolommen_pdf].sort_values("Datum")
+    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
+    if "Link" in df.columns:
+        kolommen_pdf.append("Link")
 
+    schade_pdf = df_filtered[df_filtered["teamcoach_disp"] == pdf_coach][kolommen_pdf].copy()
+    schade_pdf = schade_pdf.sort_values(by="Datum")
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
     elements = []
 
     elements.append(Paragraph(f"Overzicht schadegevallen - Teamcoach: <b>{pdf_coach}</b>", styles["Title"]))
-    elements.append(Spacer(1, 10))
+    elements.append(Spacer(1, 12))
     elements.append(Paragraph(f"📅 Rapportdatum: {datetime.today().strftime('%d-%m-%Y')}", styles["Normal"]))
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 12))
 
     totaal = len(schade_pdf)
     elements.append(Paragraph(f"📌 Totaal aantal schadegevallen: <b>{totaal}</b>", styles["Normal"]))
-    elements.append(Spacer(1, 8))
+    elements.append(Spacer(1, 12))
 
     if not schade_pdf.empty:
         eerste_datum = schade_pdf["Datum"].min().strftime("%d-%m-%Y")
@@ -457,73 +408,62 @@ if generate_pdf:
         elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
         elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam_disp'].nunique()}", styles["Normal"]))
         elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
-        elements.append(Spacer(1, 8))
+        elements.append(Spacer(1, 12))
 
-    # Aantal per chauffeur (compacte tabel)
-    aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts().reset_index()
-    aantal_per_chauffeur.columns = ["Chauffeur", "Aantal"]
-    if not aantal_per_chauffeur.empty:
-        data_ch = [["Chauffeur", "Aantal"]] + aantal_per_chauffeur.values.tolist()
-        tbl_ch = Table(data_ch, repeatRows=1, colWidths=[250, 60])
-        tbl_ch.setStyle(TableStyle([
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-            ("FONTSIZE", (0,0), (-1,-1), 8),
-        ]))
-        elements.append(Paragraph("👤 Aantal per chauffeur:", styles["Heading2"]))
-        elements.append(tbl_ch)
-        elements.append(Spacer(1, 8))
+    aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
+    elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
+    for nm, count in aantal_per_chauffeur.items():
+        elements.append(Paragraph(f"- {safe_name(nm)}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
-    # Aantal per locatie (compacte tabel)
-    aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts().reset_index()
-    aantal_per_locatie.columns = ["Locatie", "Aantal"]
-    if not aantal_per_locatie.empty:
-        data_lo = [["Locatie", "Aantal"]] + aantal_per_locatie.values.tolist()
-        tbl_lo = Table(data_lo, repeatRows=1, colWidths=[250, 60])
-        tbl_lo.setStyle(TableStyle([
-            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
-            ("FONTSIZE", (0,0), (-1,-1), 8),
-        ]))
-        elements.append(Paragraph("📍 Aantal per locatie:", styles["Heading2"]))
-        elements.append(tbl_lo)
-        elements.append(Spacer(1, 8))
+    aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
+    elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
+    for loc, count in aantal_per_locatie.items():
+        elements.append(Paragraph(f"- {safe_name(loc)}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
 
-    # Grafiek per maand
+    chart_path = None
     if not schade_pdf.empty:
-        schade_pdf = schade_pdf.assign(Maand=schade_pdf["Datum"].dt.to_period("M").astype(str))
+        schade_pdf["Maand"] = schade_pdf["Datum"].dt.to_period("M").astype(str)
         maand_data = schade_pdf["Maand"].value_counts().sort_index()
-        if not maand_data.empty:
-            fig, ax = plt.subplots()
-            maand_data.plot(kind="bar", ax=ax)
-            ax.set_title("Schadegevallen per maand")
-            ax.set_ylabel("Aantal")
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
-                fig.savefig(tmpfile.name, dpi=150)
-                plt.close(fig)
-                elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
-                elements.append(Spacer(1, 4))
-                elements.append(Image(tmpfile.name, width=400, height=200))
-                elements.append(Spacer(1, 8))
+        fig, ax = plt.subplots()
+        maand_data.plot(kind="bar", ax=ax)
+        ax.set_title("Schadegevallen per maand")
+        ax.set_ylabel("Aantal")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+            fig.savefig(tmpfile.name, dpi=150)
+            plt.close(fig)
+            chart_path = tmpfile.name
+            elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
+            elements.append(Paragraph("Deze grafiek toont het aantal gemelde schadegevallen per maand voor deze teamcoach.", styles["Italic"]))
+            elements.append(Spacer(1, 6))
+            elements.append(Image(tmpfile.name, width=400, height=200))
+            elements.append(Spacer(1, 12))
 
-    # Individuele schadegevallen (tabel)
-    head = ["Datum", "Chauffeur", "Voertuig", "Locatie", "Link"]
-    rows = []
-    for _, r in schade_pdf.iterrows():
-        datum = r["Datum"].strftime("%d-%m-%Y") if pd.notna(r["Datum"]) else "onbekend"
-        rows.append([
-            datum,
-            safe_name(r["volledige naam_disp"]),
-            safe_name(r["BusTram_disp"]),
-            safe_name(r["Locatie_disp"]),
-            (r["Link_url"] if isinstance(r["Link_url"], str) and r["Link_url"] else "-")
-        ])
-    if rows:
-        tbl = Table([head] + rows, repeatRows=1, colWidths=[60, 150, 70, 130, 120])
+    # Compacte tabel met individuele schadegevallen
+    elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
+    elements.append(Spacer(1, 6))
+
+    kol_head = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
+    heeft_link = "Link" in schade_pdf.columns
+    if heeft_link:
+        kol_head.append("Link")
+
+    tabel_data = [kol_head]
+    for _, row in schade_pdf.iterrows():
+        datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+        nm = row["volledige naam_disp"]; voertuig = row["BusTram_disp"]; locatie = row["Locatie_disp"]
+        rij = [datum, nm, voertuig, locatie]
+        if heeft_link:
+            link = extract_url(row.get("Link"))
+            rij.append(link if link else "-")
+        tabel_data.append(rij)
+
+    if len(tabel_data) > 1:
+        colw = [60, 150, 70, 130] + ([120] if heeft_link else [])
+        tbl = Table(tabel_data, repeatRows=1, colWidths=colw)
         tbl.setStyle(TableStyle([
             ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
             ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
@@ -533,7 +473,6 @@ if generate_pdf:
             ("FONTSIZE", (0,0), (-1,-1), 8),
             ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
         ]))
-        elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
         elements.append(tbl)
 
     doc.build(elements)
@@ -541,17 +480,27 @@ if generate_pdf:
     bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
     st.sidebar.download_button(label="📥 Download PDF", data=buffer, file_name=bestandsnaam, mime="application/pdf")
 
+    if chart_path and os.path.exists(chart_path):
+        try:
+            os.remove(chart_path)
+        except Exception:
+            pass
+
 # ========= TAB 1: Chauffeur =========
 with tab1:
     st.subheader("📂 Schadegevallen per chauffeur")
-    if counts_by_driver.empty:
+
+    chart_series = df_filtered["volledige naam_disp"].value_counts()
+
+    if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        plot_df = counts_by_driver.rename_axis("chauffeur").reset_index(name="aantal")
-        # status + badge (vectorized via apply met closure)
-        plot_df["status"] = plot_df["chauffeur"].apply(lambda x: status_van_chauffeur(x, gecoachte_ids, coaching_ids))
+        # Dataframe voor badges en status
+        plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
+        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
+        # ========== KPI blok ==========
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
         totaal_schades = int(plot_df["aantal"].sum())
 
@@ -565,68 +514,146 @@ with tab1:
                 step=1,
                 help="Vul hier het aantal chauffeurs in om het gemiddelde te herberekenen."
             )
+
         gem_handmatig = round(totaal_schades / handmatig_aantal, 2) if handmatig_aantal else 0.0
         col2.metric("Gemiddeld aantal schades", gem_handmatig)
         col3.metric("Totaal aantal schades", totaal_schades)
+
         if handmatig_aantal != totaal_chauffeurs_auto:
             st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
 
-        # Intervalgroepen (robuste bins)
-        step = 5
-        max_val = int(plot_df["aantal"].max())
-        edges = [0, step] if max_val <= 0 else list(range(0, max_val + step, step))
-        if edges[-1] < max_val:
-            edges.append(edges[-1] + step)
-        plot_df["interval"] = pd.cut(plot_df["aantal"], bins=edges, right=True, include_lowest=True)
+        # ========== Accordeons per interval ==========
+        st.subheader("📊 Chauffeurs gegroepeerd per interval")
 
-        # In plaats van honderden markdowns: toon per interval een dataframe
+        # Robuuste bin-randen (stap 5)
+        step = 5
+        max_val = int(plot_df["aantal"].max()) if not plot_df.empty else 0
+        if max_val <= 0:
+            edges = [0, step]
+        else:
+            edges = list(range(0, max_val + step, step))
+            if edges[-1] < max_val:
+                edges.append(edges[-1] + step)
+
+        plot_df["interval"] = pd.cut(
+            plot_df["aantal"],
+            bins=edges,
+            right=True,
+            include_lowest=True
+        )
+
         for interval, groep in plot_df.groupby("interval", sort=False):
             if groep.empty or pd.isna(interval):
                 continue
+            # Label netjes (1..right) i.p.v. 0..right
             left, right = int(interval.left), int(interval.right)
             low = max(1, left + 1)
             titel = f"{low} t/m {right} schades ({len(groep)} chauffeurs)"
+
             with st.expander(titel):
-                # voeg badge-emoji in een kolom voor visuele cue
-                g2 = groep.sort_values("aantal", ascending=False)[["badge","chauffeur","aantal","status"]]
-                st.dataframe(g2, use_container_width=True)
+                for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
+                    chauffeur_label = rec["chauffeur"]
+                    aantal = int(rec["aantal"])
+                    status = rec["status"]
+                    badge  = rec["badge"]
+                    subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
+                    with st.expander(subtitel):
+                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                               if "Link" in df_filtered.columns else \
+                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                        schade_chauffeur = (
+                            df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
+                            .sort_values(by="Datum")
+                        )
+                        for _, row in schade_chauffeur.iterrows():
+                            datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                            voertuig  = row["BusTram_disp"]
+                            loc       = row["Locatie_disp"]
+                            coach     = row["teamcoach_disp"]
+                            link      = extract_url(row.get("Link")) if "Link" in cols else None
+                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
+
 
 # ========= TAB 2: Teamcoach =========
 with tab2:
     st.subheader("Aantal schadegevallen per teamcoach")
-    if counts_by_coach.empty:
+
+    # Tel per teamcoach (we werken op de display-kolom zodat 'onbekend' ook mee telt)
+    chart_data = df_filtered["teamcoach_disp"].value_counts()
+
+    if chart_data.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
-        fig, ax = plt.subplots(figsize=(8, max(1.5, len(counts_by_coach) * 0.3 + 1)))
-        counts_by_coach.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Aantal schadegevallen"); ax.set_ylabel("Teamcoach")
+        # Staafdiagram horizontaal; dynamische hoogte bij veel coaches
+        fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
+        chart_data.sort_values().plot(kind="barh", ax=ax)
+        ax.set_xlabel("Aantal schadegevallen")
+        ax.set_ylabel("Teamcoach")
         ax.set_title("Schadegevallen per teamcoach")
-        st.pyplot(fig); plt.close(fig)
+        st.pyplot(fig)
 
         st.subheader("📂 Schadegevallen per teamcoach")
-        # Eén dataframe per coach (expander) i.p.v. per rij markdown
-        base_cols = ["Datum","volledige naam_disp","BusTram_disp","Locatie_disp","teamcoach_disp","Link_url"]
-        for coach in counts_by_coach.sort_values(ascending=False).index.tolist():
-            schade_per_coach = df_filtered.loc[df_filtered["teamcoach_disp"] == coach, base_cols]
-            schade_per_coach = schade_per_coach.sort_values("Datum")
+
+        # Doorloop elke teamcoach in volgorde van aflopend aantal
+        for coach in chart_data.sort_values(ascending=False).index.tolist():
+            # Veilig kolommen kiezen (Link is optioneel)
+            basis_kol = ["Datum", "volledige naam", "volledige naam_disp", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+            aanwezige_kol = [k for k in basis_kol if k in df_filtered.columns]
+            if "Link" in df_filtered.columns:
+                aanwezige_kol.append("Link")
+
+            # Filter & sorteer
+            schade_per_coach = (
+                df_filtered.loc[df_filtered["teamcoach_disp"] == coach, aanwezige_kol]
+                .sort_values(by="Datum")
+            )
             aantal = len(schade_per_coach)
+
             with st.expander(f"{coach} — {aantal} schadegevallen"):
-                st.dataframe(
-                    schade_per_coach,
-                    column_config={
-                        "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                        "volledige naam_disp": st.column_config.TextColumn("Chauffeur"),
-                        "BusTram_disp": st.column_config.TextColumn("Voertuig"),
-                        "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                        "Link_url": st.column_config.LinkColumn("Link", display_text="🔗 openen"),
-                    },
-                    use_container_width=True,
-                )
+                if schade_per_coach.empty:
+                    st.caption("Geen rijen binnen de huidige filters.")
+                else:
+                    # Toon elke rij compact met veilige fallback
+                    for _, row in schade_per_coach.iterrows():
+                        datum_obj = row.get("Datum")
+                        datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+
+                        # Chauffeurnaam: prefer 'volledige naam' -> toon_chauffeur, anders 'volledige naam_disp'
+                        if "volledige naam" in schade_per_coach.columns and pd.notna(row.get("volledige naam")):
+                            chauffeur = toon_chauffeur(row.get("volledige naam"))
+                        else:
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+
+                        voertuig = row.get("BusTram_disp", "onbekend")
+                        locatie  = row.get("Locatie_disp", "onbekend")
+
+                        # Link (optioneel + formules uit Excel)
+                        link = None
+                        if "Link" in schade_per_coach.columns:
+                            link = extract_url(row.get("Link"))
+
+                        prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 📍 {locatie} — "
+                        if isinstance(link, str) and link:
+                            st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                        else:
+                            st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 3: Voertuig =========
 with tab3:
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
-    df_per_maand = df_filtered[df_filtered["Datum"].notna()]
+
+    # Werk op een kopie; filter alleen rijen met geldige datum
+    df_per_maand = df_filtered.copy()
+    if "Datum" in df_per_maand.columns:
+        df_per_maand = df_per_maand[df_per_maand["Datum"].notna()].copy()
+    else:
+        df_per_maand["Datum"] = pd.NaT  # voor uniforme kolommen
+
+    # Maandlabels (NL) en vaste volgorde
     maanden_nl = {
         1:"januari",2:"februari",3:"maart",4:"april",5:"mei",6:"juni",
         7:"juli",8:"augustus",9:"september",10:"oktober",11:"november",12:"december"
@@ -634,95 +661,196 @@ with tab3:
     maand_volgorde = ["januari","februari","maart","april","mei","juni",
                       "juli","augustus","september","oktober","november","december"]
 
-    if not df_per_maand.empty:
-        df_per_maand = df_per_maand.assign(Maand=df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower())
-        voertuig_col = "BusTram_disp"
-        groep = (
-            df_per_maand.groupby(["Maand", voertuig_col])
-            .size()
-            .unstack(fill_value=0)
-            .reindex(maand_volgorde)
-            .fillna(0)
-        )
-        fig2, ax2 = plt.subplots(figsize=(10, 4))
-        groep.plot(ax=ax2, marker="o")
-        ax2.set_xlabel("Maand"); ax2.set_ylabel("Aantal schadegevallen")
-        ax2.set_title("Lijngrafiek per maand per voertuigtype")
-        ax2.legend(title="Voertuig")
-        st.pyplot(fig2); plt.close(fig2)
+    if not df_per_maand.empty and df_per_maand["Datum"].notna().any():
+        df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower()
+        # Tel per maand x voertuigtype (display-kolom, zodat 'onbekend' mee telt)
+        voertuig_col = "BusTram_disp" if "BusTram_disp" in df_per_maand.columns else "Bus/ Tram"
+        if voertuig_col not in df_per_maand.columns:
+            # Maak een lege grafiek en waarschuwing
+            st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+        else:
+            groep = (
+                df_per_maand.groupby(["Maand", voertuig_col])
+                .size()
+                .unstack(fill_value=0)
+            )
+            # Reindex maanden in vaste volgorde; ontbrekende maanden = 0
+            groep = groep.reindex(maand_volgorde).fillna(0)
+
+            # Lijngrafiek
+            fig2, ax2 = plt.subplots(figsize=(10, 4))
+            groep.plot(ax=ax2, marker="o")
+            ax2.set_xlabel("Maand")
+            ax2.set_ylabel("Aantal schadegevallen")
+            ax2.set_title("Lijngrafiek per maand per voertuigtype")
+            ax2.legend(title="Voertuig")
+            st.pyplot(fig2)
     else:
         st.info("ℹ️ Geen geldige datums binnen de huidige filters om een maandoverzicht te tonen.")
 
     st.subheader("Aantal schadegevallen per type voertuig")
-    if counts_by_vehicle.empty:
-        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
-    else:
-        fig, ax = plt.subplots(figsize=(8, max(1.5, len(counts_by_vehicle) * 0.3 + 1)))
-        counts_by_vehicle.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Aantal schadegevallen"); ax.set_ylabel("Voertuigtype")
-        ax.set_title("Schadegevallen per type voertuig")
-        st.pyplot(fig); plt.close(fig)
 
-        st.subheader("📂 Schadegevallen per voertuigtype")
-        base_cols = ["Datum","volledige naam_disp","teamcoach_disp","Locatie_disp","Link_url","BusTram_disp"]
-        for voertuig in counts_by_vehicle.sort_values(ascending=False).index.tolist():
-            schade_per_voertuig = df_filtered.loc[df_filtered["BusTram_disp"] == voertuig, base_cols]
-            schade_per_voertuig = schade_per_voertuig.sort_values("Datum")
-            aantal = len(schade_per_voertuig)
-            with st.expander(f"{voertuig} — {aantal} schadegevallen"):
-                st.dataframe(
-                    schade_per_voertuig.drop(columns=["BusTram_disp"]),
-                    column_config={
-                        "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                        "volledige naam_disp": st.column_config.TextColumn("Chauffeur"),
-                        "teamcoach_disp": st.column_config.TextColumn("Teamcoach"),
-                        "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                        "Link_url": st.column_config.LinkColumn("Link", display_text="🔗 openen"),
-                    },
-                    use_container_width=True,
+    # Telling per voertuigtype op de display-kolom
+    voertuig_col = "BusTram_disp" if "BusTram_disp" in df_filtered.columns else None
+    if voertuig_col is None:
+        st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+    else:
+        chart_data = df_filtered[voertuig_col].value_counts()
+
+        if chart_data.empty:
+            st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+        else:
+            # Staafdiagram horizontaal; dynamische hoogte
+            fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
+            chart_data.sort_values().plot(kind="barh", ax=ax)
+            ax.set_xlabel("Aantal schadegevallen")
+            ax.set_ylabel("Voertuigtype")
+            ax.set_title("Schadegevallen per type voertuig")
+            st.pyplot(fig)
+
+            st.subheader("📂 Schadegevallen per voertuigtype")
+
+            # Loop in aflopende volgorde van aantal
+            for voertuig in chart_data.sort_values(ascending=False).index.tolist():
+                # Kolommen veilig samenstellen; Link is optioneel
+                kol_list = ["Datum", "volledige naam_disp"]
+                if voertuig_col not in kol_list: 
+                    kol_list.append(voertuig_col)
+                if "Link" in df_filtered.columns:
+                    kol_list.append("Link")
+                if "teamcoach_disp" in df_filtered.columns:
+                    kol_list.append("teamcoach_disp")
+                if "Locatie_disp" in df_filtered.columns:
+                    kol_list.append("Locatie_disp")
+
+                schade_per_voertuig = (
+                    df_filtered.loc[df_filtered[voertuig_col] == voertuig, [k for k in kol_list if k in df_filtered.columns]]
+                    .sort_values(by="Datum")
                 )
+                aantal = len(schade_per_voertuig)
+
+                with st.expander(f"{voertuig} — {aantal} schadegevallen"):
+                    if schade_per_voertuig.empty:
+                        st.caption("Geen rijen binnen de huidige filters.")
+                    else:
+                        for _, row in schade_per_voertuig.iterrows():
+                            datum_obj = row.get("Datum")
+                            datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+                            coach     = row.get("teamcoach_disp", "onbekend")
+                            locatie   = row.get("Locatie_disp", "onbekend")
+
+                            # Link (optioneel + Excel-formules toestaan)
+                            link = extract_url(row.get("Link")) if "Link" in schade_per_voertuig.columns else None
+
+                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🧑‍💼 {coach} — 📍 {locatie} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 4: Locatie =========
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
-    if counts_by_location.empty:
-        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
-    else:
-        fig, ax = plt.subplots(figsize=(8, max(1.5, len(counts_by_location) * 0.3 + 1)))
-        counts_by_location.sort_values().plot(kind="barh", ax=ax)
-        ax.set_xlabel("Aantal schadegevallen"); ax.set_ylabel("Locatie")
-        ax.set_title("Schadegevallen per locatie")
-        st.pyplot(fig); plt.close(fig)
 
-        st.subheader("📂 Schadegevallen per locatie")
-        base_cols = ["Datum","volledige naam_disp","BusTram_disp","teamcoach_disp","Link_url","Locatie_disp"]
-        for locatie in counts_by_location.sort_values(ascending=False).index.tolist():
-            schade_per_locatie = df_filtered.loc[df_filtered["Locatie_disp"] == locatie, base_cols]
-            schade_per_locatie = schade_per_locatie.sort_values("Datum")
-            aantal = len(schade_per_locatie)
-            with st.expander(f"{locatie} — {aantal} schadegevallen"):
-                st.dataframe(
-                    schade_per_locatie.drop(columns=["Locatie_disp"]),
-                    column_config={
-                        "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
-                        "volledige naam_disp": st.column_config.TextColumn("Chauffeur"),
-                        "BusTram_disp": st.column_config.TextColumn("Voertuig"),
-                        "teamcoach_disp": st.column_config.TextColumn("Teamcoach"),
-                        "Link_url": st.column_config.LinkColumn("Link", display_text="🔗 openen"),
-                    },
-                    use_container_width=True,
+    # Werk op de display-kolom zodat 'onbekend' ook meetelt
+    locatie_col = "Locatie_disp" if "Locatie_disp" in df_filtered.columns else None
+    if locatie_col is None:
+        st.warning("⚠️ Kolom voor locatie niet gevonden.")
+    else:
+        chart_data = df_filtered[locatie_col].value_counts()
+
+        if chart_data.empty:
+            st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+        else:
+            # Staafdiagram horizontaal; dynamische hoogte bij veel locaties
+            fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
+            chart_data.sort_values().plot(kind="barh", ax=ax)
+            ax.set_xlabel("Aantal schadegevallen")
+            ax.set_ylabel("Locatie")
+            ax.set_title("Schadegevallen per locatie")
+            st.pyplot(fig)
+
+            st.subheader("📂 Schadegevallen per locatie")
+
+            # Loop in aflopende volgorde van aantal
+            for locatie in chart_data.sort_values(ascending=False).index.tolist():
+                # Kolommen veilig bepalen; Link is optioneel
+                kol_list = ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
+                if "Link" in df_filtered.columns:
+                    kol_list.append("Link")
+                # Filter & sorteer
+                aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
+                schade_per_locatie = (
+                    df_filtered.loc[df_filtered[locatie_col] == locatie, aanwezige_kol]
+                    .sort_values(by="Datum")
                 )
+                aantal = len(schade_per_locatie)
+
+                with st.expander(f"{locatie} — {aantal} schadegevallen"):
+                    if schade_per_locatie.empty:
+                        st.caption("Geen rijen binnen de huidige filters.")
+                    else:
+                        for _, row in schade_per_locatie.iterrows():
+                            # Datum
+                            datum_obj = row.get("Datum")
+                            datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+                            # Velden met veilige fallback
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+                            voertuig  = row.get("BusTram_disp", "onbekend")
+                            coach     = row.get("teamcoach_disp", "onbekend")
+
+                            # Link (optioneel + Excel HYPERLINK-ondersteuning)
+                            link = extract_url(row.get("Link")) if "Link" in schade_per_locatie.columns else None
+
+                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige of aanwezige link")
+
+
+
+# ... jouw bestaande tab1..tab4 code blijft ...
 
 # ========= TAB 5: Pareto =========
 with tab5:
     st.subheader("📈 Pareto-analyse (80/20)")
 
+    # 📘 Uitlegtekst netjes opgemaakt
     st.markdown("""
     ### ℹ️ Wat is Pareto?
-    **80% van de gevolgen** komt vaak uit **20% van de oorzaken**. In dit dashboard:
-    80% van de schades kan vaak worden verklaard door een beperkt aantal **chauffeurs**, **locaties**, of **voertuigen**.
+    De **Pareto-analyse** is gebaseerd op het **80/20-principe**:
+
+    - **80% van de gevolgen** komt vaak uit **20% van de oorzaken**.  
+    - Met andere woorden: een klein aantal factoren heeft een **grote invloed**.  
+
+    In dit dashboard:  
+    ➡️ 80% van de schadegevallen kan vaak worden verklaard door een beperkt aantal **chauffeurs**, **locaties**, of **voertuigen**.
+
+    ---
+
+    ### 🔎 Hoe werkt de grafiek?
+    - De **blauwe balken** tonen het **aantal schadegevallen** per element (bv. per chauffeur).  
+    - De **rode stippellijn** toont de **80%-grens**.  
+    - De **lichtblauwe lijn** toont het **cumulatief percentage**.  
+
+    **Voorbeeld:**  
+    - Chauffeur A = 30 schadegevallen  
+    - Chauffeur B = 20 schadegevallen  
+    - Chauffeur C = 10 schadegevallen  
+
+    Samen = 60 → A heeft 50%, A+B samen = 83%.  
+    👉 Dus **2 chauffeurs veroorzaken al 80% van de schadegevallen**.  
+
+    ---
+
+    ### 🎯 Waarom nuttig?
+    - Je kan **prioriteiten stellen**: focus op de kleine groep die de meeste schade veroorzaakt.  
+    - Helpt om **coaching of acties gericht** in te zetten i.p.v. verspreid.  
     """)
 
+    # Keuze dimensie
     dim_opties = {
         "Chauffeur": "volledige naam_disp",
         "Locatie": "Locatie_disp",
@@ -732,10 +860,12 @@ with tab5:
     dim_keuze = st.selectbox("Dimensie", list(dim_opties.keys()), index=0)
     kol = dim_opties[dim_keuze]
 
-    base_df = df_filtered
+    # ===== Alleen in Pareto: sluit chauffeurs met dienstnr 9999 uit =====
+    base_df = df_filtered.copy()
     if dim_keuze == "Chauffeur" and "dienstnummer" in base_df.columns:
-        base_df = base_df[base_df["dienstnummer"].astype(str).str.strip() != "9999"]
+        base_df = base_df[base_df["dienstnummer"].astype(str).str.strip() != "9999"].copy()
 
+    # ===== Pareto berekening =====
     if kol not in base_df.columns or base_df.empty:
         st.info("Geen data om te tonen voor deze selectie.")
     else:
@@ -744,16 +874,21 @@ with tab5:
         if max_n == 0:
             st.info("Geen data om te tonen voor deze selectie.")
         else:
-            vals = counts_all.values.astype(float)
-            totaal = float(vals.sum())
-            cum = np.cumsum(vals) / (totaal if totaal else 1.0)
+            totaal = int(counts_all.sum())
+            cum_share = (counts_all.cumsum() / totaal)
 
             # 80%-punt
-            k80 = int(np.searchsorted(cum, 0.80))
-            k80 = min(max_n - 1, max(0, k80))
-            idx80_label = counts_all.index[k80]
-            cum80 = float(cum[k80])
+            mask80 = cum_share.ge(0.80)
+            if mask80.any():
+                idx80_label = mask80.idxmax()
+                k80 = int(counts_all.index.get_loc(idx80_label))
+                cum80 = float(cum_share.loc[idx80_label])
+            else:
+                idx80_label = counts_all.index[-1]
+                k80 = max_n - 1
+                cum80 = float(cum_share.iloc[-1])
 
+            # Robuuste Top-N slider
             min_n = 1
             hard_cap = 200
             max_slider = min(hard_cap, max_n)
@@ -761,6 +896,8 @@ with tab5:
             top_n = st.slider("Toon top N", min_value=min_n, max_value=max_slider, value=default_n, step=1)
             counts_top = counts_all.head(top_n)
 
+            # Plot
+            import plotly.graph_objects as go
             fig = go.Figure()
             fig.add_bar(
                 x=counts_top.index,
@@ -769,20 +906,23 @@ with tab5:
                 hovertemplate=f"{dim_keuze}: %{{x}}<br>Aantal: %{{y}}<extra></extra>",
             )
             fig.add_scatter(
-                x=list(counts_all.index),
-                y=list(cum),
+                x=counts_all.index,
+                y=cum_share.values,
                 mode="lines+markers",
                 name="Cumulatief aandeel",
                 yaxis="y2",
                 hovertemplate=f"{dim_keuze}: %{{x}}<br>Cumulatief: %{{y:.1%}}<extra></extra>",
             )
+
+            # Hulplijnen en annotatie
             shapes = [
                 dict(type="line", x0=0, x1=max_n, y0=0.8, y1=0.8, yref="y2",
-                     line=dict(dash="dash")),
+                     line=dict(dash="dash", color="red")),
                 dict(type="line", xref="x", yref="paper",
                      x0=idx80_label, x1=idx80_label, y0=0, y1=1,
-                     line=dict(dash="dot")),
+                     line=dict(dash="dot", color="black")),
             ]
+
             fig.update_layout(
                 title=f"Pareto — {dim_keuze} (80% hulplijn)",
                 xaxis=dict(tickangle=-45, showticklabels=False),
@@ -800,24 +940,34 @@ with tab5:
             )
             st.plotly_chart(fig, use_container_width=True)
 
+            # KPI's + tabel
+            colA, colB = st.columns(2)
+            with colA:
+                st.metric("Aantal elementen tot 80%", k80 + 1)
+            with colB:
+                st.metric("Cumulatief aandeel bij markering", f"{cum80*100:.1f}%")
+
             df_pareto = counts_all.reset_index()
             df_pareto.columns = [dim_keuze, "Aantal"]
             df_pareto["Bijdrage %"] = (df_pareto["Aantal"] / totaal * 100).round(1)
             df_pareto["Cumulatief %"] = (df_pareto["Aantal"].cumsum() / totaal * 100).round(1)
             df_pareto["Top 80%"] = df_pareto.index <= k80
 
-            colA, colB = st.columns(2)
-            colA.metric("Aantal elementen tot 80%", k80 + 1)
-            colB.metric("Cumulatief aandeel bij markering", f"{cum80*100:.1f}%")
-
             st.markdown("#### Top 20 detail")
-            st.dataframe(df_pareto.head(20), use_container_width=True)
+            st.dataframe(df_pareto.head(20))
+
+
+
 
 # ========= TAB 6: Opzoeken =========
 with tab6:
     st.subheader("🔎 Opzoeken op personeelsnummer")
+
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
-    dn_in = "".join(re.findall(r"\d+", str(zoek)))  # alleen cijfers
+
+    # Normaliseer invoer -> alleen cijfers
+    dn_in = re.findall(r"\d+", str(zoek))
+    dn_in = dn_in[0] if dn_in else ""
 
     if not dn_in:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
@@ -825,37 +975,50 @@ with tab6:
         if "dienstnummer" not in df.columns:
             st.error("Kolom 'dienstnummer' ontbreekt in de data.")
         else:
-            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in]
+            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
+
             if res.empty:
                 st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
             else:
+                # Haal naam & teamcoach (eerste waarde uit res)
                 naam_chauffeur = res["volledige naam_disp"].iloc[0]
                 naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+
                 st.markdown(f"**👤 Chauffeur:** {naam_chauffeur}")
                 st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
                 st.markdown("---")
+
                 st.metric("Aantal schadegevallen", len(res))
 
-                heeft_link = "Link_url" in res.columns
-                toon_kol = ["Datum", "Locatie_disp"] + (["Link_url"] if heeft_link else [])
-                res2 = res.sort_values("Datum", ascending=False)[toon_kol]
+                # Resultaten tabel
+                heeft_link = "Link" in res.columns
+                res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
+
+                toon_kol = ["Datum", "Locatie_disp"]
+                if heeft_link:
+                    toon_kol.append("URL")
+
+                res = res.sort_values("Datum", ascending=False)
 
                 if heeft_link:
                     st.dataframe(
-                        res2,
+                        res[toon_kol],
                         column_config={
                             "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                             "Locatie_disp": st.column_config.TextColumn("Locatie"),
-                            "Link_url": st.column_config.LinkColumn("Link", display_text="🔗 openen")
+                            "URL": st.column_config.LinkColumn("Link", display_text="🔗 openen")
                         },
                         use_container_width=True,
                     )
                 else:
                     st.dataframe(
-                        res2,
+                        res[toon_kol],
                         column_config={
                             "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                             "Locatie_disp": st.column_config.TextColumn("Locatie"),
                         },
                         use_container_width=True,
                     )
+
+
+
