@@ -305,7 +305,48 @@ if "Link" in df.columns:
 else:
     df["Link_url"] = pd.NA
 
-# ========= Coachingslijst =========
+
+
+
+#with st.sidebar:
+    st.header("🔍 Filters")
+
+    # Helper (voorkomt herhaling)
+    def multiselect_all(label, options, all_label, key):
+        opts_with_all = [all_label] + options
+        picked_raw = st.multiselect(label, options=opts_with_all, default=[all_label], key=key)
+        # Kies alles als "Alle" is geselecteerd of als de selectie leeg is
+        picked = options if (all_label in picked_raw or len(picked_raw) == 0) else picked_raw
+        return picked
+
+    # Teamcoach
+    ALL_COACHES = "— Alle teamcoaches —"
+    selected_teamcoaches = multiselect_all(
+        "Teamcoach", teamcoach_options, ALL_COACHES, key="filter_teamcoach"
+    )
+
+    # Locatie
+    ALL_LOCATIONS = "— Alle locaties —"
+    selected_locaties = multiselect_all(
+        "Locatie", locatie_options, ALL_LOCATIONS, key="filter_locatie"
+    )
+
+    # Voertuig (optioneel ook met 'Alle')
+    ALL_VEHICLES = "— Alle voertuigen —"
+    selected_voertuigen = multiselect_all(
+        "Voertuigtype", voertuig_options, ALL_VEHICLES, key="filter_voertuig"
+    )
+
+    # Kwartaal
+    ALL_QUARTERS = "— Alle kwartalen —"
+    selected_kwartalen = multiselect_all(
+        "Kwartaal", kwartaal_options, ALL_QUARTERS, key="filter_kwartaal"
+    )
+
+    if st.button("🔄 Reset filters"):
+        st.query_params.clear()
+        st.rerun()
+ ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
 if coach_warn:
     st.sidebar.warning(f"⚠️ {coach_warn}")
