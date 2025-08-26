@@ -42,17 +42,6 @@ def load_excel(path, **kwargs):
 
 
 
-def load_excel(path, **kwargs):
-    """Veilig Excel-bestand inladen met caching."""
-    try:
-        return pd.read_excel(path, **kwargs)
-    except FileNotFoundError:
-        st.error(f"Bestand niet gevonden: {path}")
-        st.stop()
-    except Exception as e:
-        st.error(f"Kon '{path}' niet lezen: {e}")
-        st.stop()
-
 def naam_naar_dn(naam: str) -> str | None:
     """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
     if pd.isna(naam):
