@@ -12,6 +12,11 @@ import hashlib
 from datetime import datetime
 import os
 import re
+from streamlit_autorefresh import st_autorefresh
+
+# 🔄 Auto-refresh: herlaad de pagina elk uur
+st_autorefresh(interval=3600 * 1000, key="data_refresh")
+
 
 # ========= Instellingen =========
 LOGIN_ACTIEF = False  # Zet True om login te activeren
@@ -22,7 +27,21 @@ st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
 def hash_wachtwoord(wachtwoord: str) -> str:
     return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)  # cache max 1 uur geldig
+def load_excel(path, **kwargs):
+    """Veilig Excel-bestand inladen met caching."""
+    try:
+        return pd.read_excel(path, **kwargs)
+    except FileNotFoundError:
+        st.error(f"Bestand niet gevonden: {path}")
+        st.stop()
+    except Exception as e:
+        st.error(f"Kon '{path}' niet lezen: {e}")
+        st.stop()
+
+
+
+
 def load_excel(path, **kwargs):
     """Veilig Excel-bestand inladen met caching."""
     try:
