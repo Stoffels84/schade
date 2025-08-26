@@ -4,3 +4,4 @@ openpyxl
 matplotlib
 reportlab
 plotly
+streamlit-autorefresh
