@@ -29,7 +29,15 @@ def hash_wachtwoord(wachtwoord: str) -> str:
     return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
 
 @st.cache_data(show_spinner=False, ttl=3600)  # cache max 1 uur geldig
-
+def load_excel(path, **kwargs):
+    try:
+        return pd.read_excel(path, **kwargs)
+    except FileNotFoundError:
+        st.error(f"Bestand niet gevonden: {path}")
+        st.stop()
+    except Exception as e:
+        st.error(f"Kon '{path}' niet lezen: {e}")
+        st.stop()
 
 
 
