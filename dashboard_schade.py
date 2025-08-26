@@ -648,8 +648,9 @@ with tab2:
                             st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 3: Voertuig =========
-# ======= NIEUW: maandoverzicht met jaar-maand (YYYY-MM) =======
+# ========= TAB 3: Voertuig =========
 with tab3:
+    # --- Deel 1: Lijngrafiek per maand (nu met JAAR-MAAND) ---
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
     # Werk op een kopie; alleen rijen met geldige datum
@@ -657,24 +658,25 @@ with tab3:
     if "Datum" in df_per_maand.columns:
         df_per_maand = df_per_maand[df_per_maand["Datum"].notna()].copy()
     else:
-        df_per_maand["Datum"] = pd.NaT  # voor uniforme kolommen
+        df_per_maand["Datum"] = pd.NaT  # uniforme kolommen
 
-    # Bepaal kolomnaam voor voertuigtype
+    # Bepaal kolomnaam voor voertuigtype (display-kolom, zodat 'onbekend' meetelt)
     voertuig_col = (
-        "BusTram_disp" if "BusTram_disp" in df_per_maand.columns
+        "BusTram_disp"
+        if "BusTram_disp" in df_per_maand.columns
         else ("Bus/ Tram" if "Bus/ Tram" in df_per_maand.columns else None)
     )
 
     if voertuig_col is None:
         st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
-    elif df_per_maand.empty:
+    elif df_per_maand.empty or not df_per_maand["Datum"].notna().any():
         st.info("ℹ️ Geen geldige datums binnen de huidige filters om een maandoverzicht te tonen.")
     else:
-        # 1) Maak jaar-maand sleutel (YYYY-MM), zodat 2024-01 ≠ 2025-01
+        # 1) Maak JAAR-MAAND sleutel (YYYY-MM), zodat 2024-01 ≠ 2025-01
         df_per_maand["JaarMaandP"] = df_per_maand["Datum"].dt.to_period("M")
         df_per_maand["JaarMaand"]  = df_per_maand["JaarMaandP"].astype(str)
 
-        # 2) Tel per jaar-maand × voertuigtype
+        # 2) Tel per JAAR-MAAND × voertuigtype
         groep = (
             df_per_maand.groupby(["JaarMaand", voertuig_col])
             .size()
@@ -698,13 +700,12 @@ with tab3:
         plt.tight_layout()
         st.pyplot(fig2)
 
-    # ===== Het resterende deel van TAB 3 ( "Aantal schadegevallen per type voertuig" ) laat je ongewijzigd staan. =====
-
-
+    # --- Deel 2: Aantal schadegevallen per type voertuig (ongewijzigd + kleine robuustheid) ---
     st.subheader("Aantal schadegevallen per type voertuig")
 
-    # Telling per voertuigtype op de display-kolom
-    voertuig_col = "BusTram_disp" if "BusTram_disp" in df_filtered.columns else None
+    voertuig_col = "BusTram_disp" if "BusTram_disp" in df_filtered.columns else (
+        "Bus/ Tram" if "Bus/ Tram" in df_filtered.columns else None
+    )
     if voertuig_col is None:
         st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
     else:
@@ -727,7 +728,7 @@ with tab3:
             for voertuig in chart_data.sort_values(ascending=False).index.tolist():
                 # Kolommen veilig samenstellen; Link is optioneel
                 kol_list = ["Datum", "volledige naam_disp"]
-                if voertuig_col not in kol_list: 
+                if voertuig_col not in kol_list:
                     kol_list.append(voertuig_col)
                 if "Link" in df_filtered.columns:
                     kol_list.append("Link")
@@ -736,8 +737,9 @@ with tab3:
                 if "Locatie_disp" in df_filtered.columns:
                     kol_list.append("Locatie_disp")
 
+                aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
                 schade_per_voertuig = (
-                    df_filtered.loc[df_filtered[voertuig_col] == voertuig, [k for k in kol_list if k in df_filtered.columns]]
+                    df_filtered.loc[df_filtered[voertuig_col] == voertuig, aanwezige_kol]
                     .sort_values(by="Datum")
                 )
                 aantal = len(schade_per_voertuig)
@@ -753,7 +755,7 @@ with tab3:
                             coach     = row.get("teamcoach_disp", "onbekend")
                             locatie   = row.get("Locatie_disp", "onbekend")
 
-                            # Link (optioneel + Excel-formules toestaan)
+                            # Link (optioneel + Excel-formules toestaan via extract_url)
                             link = extract_url(row.get("Link")) if "Link" in schade_per_voertuig.columns else None
 
                             prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🧑‍💼 {coach} — 📍 {locatie} — "
