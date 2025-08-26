@@ -648,50 +648,58 @@ with tab2:
                             st.markdown(prefix + "❌ Geen geldige of aanwezige link")
 
 # ========= TAB 3: Voertuig =========
+# ======= NIEUW: maandoverzicht met jaar-maand (YYYY-MM) =======
 with tab3:
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
-    # Werk op een kopie; filter alleen rijen met geldige datum
+    # Werk op een kopie; alleen rijen met geldige datum
     df_per_maand = df_filtered.copy()
     if "Datum" in df_per_maand.columns:
         df_per_maand = df_per_maand[df_per_maand["Datum"].notna()].copy()
     else:
         df_per_maand["Datum"] = pd.NaT  # voor uniforme kolommen
 
-    # Maandlabels (NL) en vaste volgorde
-    maanden_nl = {
-        1:"januari",2:"februari",3:"maart",4:"april",5:"mei",6:"juni",
-        7:"juli",8:"augustus",9:"september",10:"oktober",11:"november",12:"december"
-    }
-    maand_volgorde = ["januari","februari","maart","april","mei","juni",
-                      "juli","augustus","september","oktober","november","december"]
+    # Bepaal kolomnaam voor voertuigtype
+    voertuig_col = (
+        "BusTram_disp" if "BusTram_disp" in df_per_maand.columns
+        else ("Bus/ Tram" if "Bus/ Tram" in df_per_maand.columns else None)
+    )
 
-    if not df_per_maand.empty and df_per_maand["Datum"].notna().any():
-        df_per_maand["Maand"] = df_per_maand["Datum"].dt.month.map(maanden_nl).str.lower()
-        # Tel per maand x voertuigtype (display-kolom, zodat 'onbekend' mee telt)
-        voertuig_col = "BusTram_disp" if "BusTram_disp" in df_per_maand.columns else "Bus/ Tram"
-        if voertuig_col not in df_per_maand.columns:
-            # Maak een lege grafiek en waarschuwing
-            st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
-        else:
-            groep = (
-                df_per_maand.groupby(["Maand", voertuig_col])
-                .size()
-                .unstack(fill_value=0)
-            )
-            # Reindex maanden in vaste volgorde; ontbrekende maanden = 0
-            groep = groep.reindex(maand_volgorde).fillna(0)
-
-            # Lijngrafiek
-            fig2, ax2 = plt.subplots(figsize=(10, 4))
-            groep.plot(ax=ax2, marker="o")
-            ax2.set_xlabel("Maand")
-            ax2.set_ylabel("Aantal schadegevallen")
-            ax2.set_title("Lijngrafiek per maand per voertuigtype")
-            ax2.legend(title="Voertuig")
-            st.pyplot(fig2)
-    else:
+    if voertuig_col is None:
+        st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+    elif df_per_maand.empty:
         st.info("ℹ️ Geen geldige datums binnen de huidige filters om een maandoverzicht te tonen.")
+    else:
+        # 1) Maak jaar-maand sleutel (YYYY-MM), zodat 2024-01 ≠ 2025-01
+        df_per_maand["JaarMaandP"] = df_per_maand["Datum"].dt.to_period("M")
+        df_per_maand["JaarMaand"]  = df_per_maand["JaarMaandP"].astype(str)
+
+        # 2) Tel per jaar-maand × voertuigtype
+        groep = (
+            df_per_maand.groupby(["JaarMaand", voertuig_col])
+            .size()
+            .unstack(fill_value=0)
+        )
+
+        # 3) Vul ontbrekende maanden tussen min en max met 0, zodat de lijn doorloopt
+        start_m = df_per_maand["JaarMaandP"].min()
+        eind_m  = df_per_maand["JaarMaandP"].max()
+        alle_maanden = pd.period_range(start=start_m, end=eind_m, freq="M").astype(str)
+        groep = groep.reindex(alle_maanden, fill_value=0)
+
+        # 4) Plot lijngrafiek
+        fig2, ax2 = plt.subplots(figsize=(10, 4))
+        groep.plot(ax=ax2, marker="o")
+        ax2.set_xlabel("Jaar-Maand")
+        ax2.set_ylabel("Aantal schadegevallen")
+        ax2.set_title("Schadegevallen per maand per voertuigtype (YYYY-MM)")
+        ax2.legend(title="Voertuig")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig2)
+
+    # ===== Het resterende deel van TAB 3 ( "Aantal schadegevallen per type voertuig" ) laat je ongewijzigd staan. =====
+
 
     st.subheader("Aantal schadegevallen per type voertuig")
 
