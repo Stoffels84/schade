@@ -830,8 +830,8 @@ with tab4:
 # ... jouw bestaande tab1..tab4 code blijft ...
 
 
-# ========= TAB 6: Opzoeken =========
-with tab6:
+# ========= TAB 5: Opzoeken =========
+with tab5:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
