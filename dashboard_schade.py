@@ -371,9 +371,10 @@ with st.sidebar:
     st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "📈 Pareto", "🔎 Opzoeken"]
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    ["👤 Chauffeur", "🧑‍💼 Teamcoach", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken"]
 )
+
 
 
 
@@ -827,151 +828,6 @@ with tab4:
 
 
 # ... jouw bestaande tab1..tab4 code blijft ...
-
-# ========= TAB 5: Pareto =========
-with tab5:
-    st.subheader("📈 Pareto-analyse (80/20)")
-
-    # 📘 Uitlegtekst netjes opgemaakt
-    st.markdown("""
-    ### ℹ️ Wat is Pareto?
-    De **Pareto-analyse** is gebaseerd op het **80/20-principe**:
-
-    - **80% van de gevolgen** komt vaak uit **20% van de oorzaken**.  
-    - Met andere woorden: een klein aantal factoren heeft een **grote invloed**.  
-
-    In dit dashboard:  
-    ➡️ 80% van de schadegevallen kan vaak worden verklaard door een beperkt aantal **chauffeurs**, **locaties**, of **voertuigen**.
-
-    ---
-
-    ### 🔎 Hoe werkt de grafiek?
-    - De **blauwe balken** tonen het **aantal schadegevallen** per element (bv. per chauffeur).  
-    - De **rode stippellijn** toont de **80%-grens**.  
-    - De **lichtblauwe lijn** toont het **cumulatief percentage**.  
-
-    **Voorbeeld:**  
-    - Chauffeur A = 30 schadegevallen  
-    - Chauffeur B = 20 schadegevallen  
-    - Chauffeur C = 10 schadegevallen  
-
-    Samen = 60 → A heeft 50%, A+B samen = 83%.  
-    👉 Dus **2 chauffeurs veroorzaken al 80% van de schadegevallen**.  
-
-    ---
-
-    ### 🎯 Waarom nuttig?
-    - Je kan **prioriteiten stellen**: focus op de kleine groep die de meeste schade veroorzaakt.  
-    - Helpt om **coaching of acties gericht** in te zetten i.p.v. verspreid.  
-    """)
-
-    # Keuze dimensie
-    dim_opties = {
-        "Chauffeur": "volledige naam_disp",
-        "Locatie": "Locatie_disp",
-        "Voertuig": "BusTram_disp",
-        "Teamcoach": "teamcoach_disp",
-    }
-    dim_keuze = st.selectbox("Dimensie", list(dim_opties.keys()), index=0)
-    kol = dim_opties[dim_keuze]
-
-    # ===== Alleen in Pareto: sluit chauffeurs met dienstnr 9999 uit =====
-    base_df = df_filtered.copy()
-    if dim_keuze == "Chauffeur" and "dienstnummer" in base_df.columns:
-        base_df = base_df[base_df["dienstnummer"].astype(str).str.strip() != "9999"].copy()
-
-    # ===== Pareto berekening =====
-    if kol not in base_df.columns or base_df.empty:
-        st.info("Geen data om te tonen voor deze selectie.")
-    else:
-        counts_all = base_df[kol].value_counts()
-        max_n = int(len(counts_all))
-        if max_n == 0:
-            st.info("Geen data om te tonen voor deze selectie.")
-        else:
-            totaal = int(counts_all.sum())
-            cum_share = (counts_all.cumsum() / totaal)
-
-            # 80%-punt
-            mask80 = cum_share.ge(0.80)
-            if mask80.any():
-                idx80_label = mask80.idxmax()
-                k80 = int(counts_all.index.get_loc(idx80_label))
-                cum80 = float(cum_share.loc[idx80_label])
-            else:
-                idx80_label = counts_all.index[-1]
-                k80 = max_n - 1
-                cum80 = float(cum_share.iloc[-1])
-
-            # Robuuste Top-N slider
-            min_n = 1
-            hard_cap = 200
-            max_slider = min(hard_cap, max_n)
-            default_n = min(20, max_slider)
-            top_n = st.slider("Toon top N", min_value=min_n, max_value=max_slider, value=default_n, step=1)
-            counts_top = counts_all.head(top_n)
-
-            # Plot
-            import plotly.graph_objects as go
-            fig = go.Figure()
-            fig.add_bar(
-                x=counts_top.index,
-                y=counts_top.values,
-                name="Aantal schades",
-                hovertemplate=f"{dim_keuze}: %{{x}}<br>Aantal: %{{y}}<extra></extra>",
-            )
-            fig.add_scatter(
-                x=counts_all.index,
-                y=cum_share.values,
-                mode="lines+markers",
-                name="Cumulatief aandeel",
-                yaxis="y2",
-                hovertemplate=f"{dim_keuze}: %{{x}}<br>Cumulatief: %{{y:.1%}}<extra></extra>",
-            )
-
-            # Hulplijnen en annotatie
-            shapes = [
-                dict(type="line", x0=0, x1=max_n, y0=0.8, y1=0.8, yref="y2",
-                     line=dict(dash="dash", color="red")),
-                dict(type="line", xref="x", yref="paper",
-                     x0=idx80_label, x1=idx80_label, y0=0, y1=1,
-                     line=dict(dash="dot", color="black")),
-            ]
-
-            fig.update_layout(
-                title=f"Pareto — {dim_keuze} (80% hulplijn)",
-                xaxis=dict(tickangle=-45, showticklabels=False),
-                yaxis=dict(title="Aantal schades"),
-                yaxis2=dict(title="Cumulatief aandeel", overlaying="y", side="right", range=[0, 1.05]),
-                shapes=shapes,
-                annotations=[
-                    dict(
-                        x=idx80_label, y=cum80, xref="x", yref="y2",
-                        text=f"80% bij #{k80+1}",
-                        showarrow=True, arrowhead=2, ax=0, ay=-30, bgcolor="white",
-                    )
-                ],
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-
-            # KPI's + tabel
-            colA, colB = st.columns(2)
-            with colA:
-                st.metric("Aantal elementen tot 80%", k80 + 1)
-            with colB:
-                st.metric("Cumulatief aandeel bij markering", f"{cum80*100:.1f}%")
-
-            df_pareto = counts_all.reset_index()
-            df_pareto.columns = [dim_keuze, "Aantal"]
-            df_pareto["Bijdrage %"] = (df_pareto["Aantal"] / totaal * 100).round(1)
-            df_pareto["Cumulatief %"] = (df_pareto["Aantal"].cumsum() / totaal * 100).round(1)
-            df_pareto["Top 80%"] = df_pareto.index <= k80
-
-            st.markdown("#### Top 20 detail")
-            st.dataframe(df_pareto.head(20))
-
-
 
 
 # ========= TAB 6: Opzoeken =========
