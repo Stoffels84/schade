@@ -14,14 +14,15 @@ import os
 import re
 from streamlit_autorefresh import st_autorefresh
 
-# 🔄 Auto-refresh: herlaad de pagina elk uur
-st_autorefresh(interval=3600 * 1000, key="data_refresh")
-
 
 # ========= Instellingen =========
 LOGIN_ACTIEF = False  # Zet True om login te activeren
 plt.rcParams["figure.dpi"] = 150
 st.set_page_config(page_title="Schadegevallen Dashboard", layout="wide")
+
+# 🔄 Auto-refresh: herlaad de pagina elk uur
+st_autorefresh(interval=3600 * 1000, key="data_refresh")
+
 
 # ========= Helpers =========
 def hash_wachtwoord(wachtwoord: str) -> str:
