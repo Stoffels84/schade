@@ -613,9 +613,9 @@ with tab1:
         name_to_dn = (df_filtered[["volledige naam_disp", "dienstnummer"]]
               .dropna()
               .drop_duplicates("volledige naam_disp"))
-name_to_dn["dienstnummer"] = name_to_dn["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
-name_to_dn = name_to_dn.set_index("volledige naam_disp")["dienstnummer"].to_dict()
-plot_df["status"] = plot_df["chauffeur"].map(lambda nm: status_van_dn(name_to_dn.get(nm)))
+        name_to_dn["dienstnummer"] = name_to_dn["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
+        name_to_dn = name_to_dn.set_index("volledige naam_disp")["dienstnummer"].to_dict()
+        plot_df["status"] = plot_df["chauffeur"].map(lambda nm: status_van_dn(name_to_dn.get(nm)))
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
