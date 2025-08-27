@@ -370,7 +370,7 @@ with st.sidebar:
     st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
     st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
 
-tab1, tab2, tab3, tab4 = st.tabs(
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken"]
 )
 
@@ -583,7 +583,7 @@ with tab1:
 
 
 # ========= TAB 2: Voertuig =========
-with tab3:
+with tab2:
     # --- Deel 1: Lijngrafiek per maand (nu met JAAR-MAAND) ---
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
@@ -699,7 +699,7 @@ with tab3:
                                 st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 3: Locatie =========
-with tab4:
+with tab3:
     st.subheader("Aantal schadegevallen per locatie")
 
     # Werk op de display-kolom zodat 'onbekend' ook meetelt
@@ -764,7 +764,7 @@ with tab4:
 
 
 # ========= TAB 4: Opzoeken =========
-with tab5:
+with tab4:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
