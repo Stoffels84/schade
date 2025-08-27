@@ -559,6 +559,12 @@ if generate_pdf:
             pass
 
 # ========= TAB 1: Chauffeur =========
+
+st.sidebar.write(f"DEBUG: aantal in gecoachte_ids = {len(gecoachte_ids)}")
+st.sidebar.write(list(gecoachte_ids)[:20])
+
+
+
 with tab1:
     st.subheader("📂 Schadegevallen per chauffeur")
 
