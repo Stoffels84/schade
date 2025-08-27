@@ -174,21 +174,46 @@ def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
 
+def status_van_dn(dn: str | int | None) -> str:
+    """Status bepalen op basis van personeels-/dienstnummer (P-nr)."""
+    if dn is None or (isinstance(dn, float) and pd.isna(dn)):
+        return "Geen"
+    s = ''.join(ch for ch in str(dn) if str(ch).isdigit())
+    if not s:
+        return "Geen"
+    in_geel = s in gecoachte_ids
+    in_blauw = s in coaching_ids
+    if in_geel and in_blauw: return "Beide"
+    if in_geel:              return "Voltooid"
+    if in_blauw:             return "Coaching"
+    return "Geen"
+
 def badge_for_row(row) -> str:
-    """Geef de juiste badge(s) terug voor een rij met chauffeur-info."""
+    """Geef de juiste badge(s) terug voor een rij met chauffeur-info.
+    Prefer 'dienstnummer' (P-nr) als die kolom aanwezig is; anders val terug op naam.
+    """
+    dn_val = None
+    if hasattr(row, 'index') and 'dienstnummer' in row.index:
+        dn_val = row.get('dienstnummer')
+    elif isinstance(row, dict) and 'dienstnummer' in row:
+        dn_val = row.get('dienstnummer')
+
+    if dn_val is not None and not (isinstance(dn_val, float) and pd.isna(dn_val)):
+        return badge_van_status(status_van_dn(dn_val))
+
+    # Fallback via naam-parsing (minder betrouwbaar)
     naam_src = None
     if isinstance(row, dict):
-        if "volledige naam" in row and pd.notna(row.get("volledige naam")):
-            naam_src = row.get("volledige naam")
-        elif "volledige naam_disp" in row and pd.notna(row.get("volledige naam_disp")):
-            naam_src = row.get("volledige naam_disp")
+        if 'volledige naam' in row and pd.notna(row.get('volledige naam')):
+            naam_src = row.get('volledige naam')
+        elif 'volledige naam_disp' in row and pd.notna(row.get('volledige naam_disp')):
+            naam_src = row.get('volledige naam_disp')
     else:
-        if "volledige naam" in row and pd.notna(row.get("volledige naam")):
-            naam_src = row.get("volledige naam")
-        elif "volledige naam_disp" in row and pd.notna(row.get("volledige naam_disp")):
-            naam_src = row.get("volledige naam_disp")
-    status = status_van_chauffeur(naam_src)
-    return badge_van_status(status)
+        if 'volledige naam' in row and pd.notna(row.get('volledige naam')):
+            naam_src = row.get('volledige naam')
+        elif 'volledige naam_disp' in row and pd.notna(row.get('volledige naam_disp')):
+            naam_src = row.get('volledige naam_disp')
+    return badge_van_status(status_van_chauffeur(naam_src))
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
@@ -585,7 +610,12 @@ with tab1:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
+        name_to_dn = (df_filtered[["volledige naam_disp", "dienstnummer"]]
+              .dropna()
+              .drop_duplicates("volledige naam_disp"))
+name_to_dn["dienstnummer"] = name_to_dn["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
+name_to_dn = name_to_dn.set_index("volledige naam_disp")["dienstnummer"].to_dict()
+plot_df["status"] = plot_df["chauffeur"].map(lambda nm: status_van_dn(name_to_dn.get(nm)))
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
@@ -638,9 +668,9 @@ with tab1:
                     badge  = rec["badge"]
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
-                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                        cols = ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
                                if "Link" in df_filtered.columns else \
-                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                               ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
                         schade_chauffeur = (
                             df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
                             .sort_values(by="Datum")
@@ -651,7 +681,7 @@ with tab1:
                             loc       = row["Locatie_disp"]
                             coach     = row["teamcoach_disp"]
                             link      = extract_url(row.get("Link")) if "Link" in cols else None
-                            badge_r   = badge_for_row(row)
+                            badge_r = badge_van_status(status_van_dn(row.get("dienstnummer")))
                             prefix = f"📅 {datum_str} — 👤 {badge_r}{toon_chauffeur(chauffeur_label)} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                             if isinstance(link, str) and link:
                                 st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
@@ -726,7 +756,7 @@ with tab3:
             st.subheader("📂 Schadegevallen per voertuigtype")
 
             for voertuig in chart_data.sort_values(ascending=False).index.tolist():
-                kol_list = ["Datum", "volledige naam_disp"]
+                kol_list = ["Datum", "dienstnummer", "volledige naam_disp"]
                 if voertuig_col not in kol_list:
                     kol_list.append(voertuig_col)
                 if "Link" in df_filtered.columns:
@@ -754,7 +784,7 @@ with tab3:
                             coach     = row.get("teamcoach_disp", "onbekend")
                             locatie   = row.get("Locatie_disp", "onbekend")
                             link      = extract_url(row.get("Link")) if "Link" in schade_per_voertuig.columns else None
-                            badge = badge_for_row(row)
+                            badge = badge_van_status(status_van_dn(row.get("dienstnummer")))
 
                             prefix = f"📅 {datum_str} — 👤 {badge}{chauffeur} — 🧑‍💼 {coach} — 📍 {locatie} — "
                             if isinstance(link, str) and link:
@@ -785,7 +815,7 @@ with tab4:
             st.subheader("📂 Schadegevallen per locatie")
 
             for locatie in chart_data.sort_values(ascending=False).index.tolist():
-                kol_list = ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
+                kol_list = ["Datum", "dienstnummer", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
                 if "Link" in df_filtered.columns:
                     kol_list.append("Link")
                 aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
@@ -806,7 +836,7 @@ with tab4:
                             voertuig  = row.get("BusTram_disp", "onbekend")
                             coach     = row.get("teamcoach_disp", "onbekend")
                             link = extract_url(row.get("Link")) if "Link" in schade_per_locatie.columns else None
-                            badge = badge_for_row(row)
+                            badge = badge_van_status(status_van_dn(row.get("dienstnummer")))
 
                             prefix = f"📅 {datum_str} — 👤 {badge}{chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
                             if isinstance(link, str) and link:
