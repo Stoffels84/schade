@@ -491,7 +491,7 @@ if generate_pdf:
             pass
 
 # ========= TAB 1: Chauffeur =========
-with tab1:
+with chauffeur_tab:
     st.subheader("📂 Schadegevallen per chauffeur")
 
     chart_series = df_filtered["volledige naam_disp"].value_counts()
@@ -583,7 +583,7 @@ with tab1:
 
 
 # ========= TAB 2: Voertuig =========
-with tab2:
+with voertuig_tab:
     # --- Deel 1: Lijngrafiek per maand (nu met JAAR-MAAND) ---
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
 
@@ -699,7 +699,7 @@ with tab2:
                                 st.markdown(prefix + "❌ Geen geldige link")
 
 # ========= TAB 3: Locatie =========
-with tab3:
+with locatie_tab:
     st.subheader("Aantal schadegevallen per locatie")
 
     # Werk op de display-kolom zodat 'onbekend' ook meetelt
@@ -764,7 +764,7 @@ with tab3:
 
 
 # ========= TAB 4: Opzoeken =========
-with tab4:
+with opzoeken_tab:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
