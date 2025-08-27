@@ -366,28 +366,30 @@ st.download_button(
 
 # ========= Coaching-status in sidebar =========
 with st.sidebar:
-    st.markdown("### ℹ️ Coaching-status (gefilterd)")
+    st.markdown("### ℹ️ Coaching-status (volgens teamcoach-filter)")
 
-    # Unieke dienstnummers binnen de huidige selectie
-    if "dienstnummer" in df_filtered.columns:
-        gefilterde_ids = (
-            df_filtered["dienstnummer"]
+    # ➜ Alleen teamcoach-filter toepassen (andere filters negeren)
+    if "teamcoach_disp" in df.columns and "dienstnummer" in df.columns:
+        df_tc = df[df["teamcoach_disp"].isin(selected_teamcoaches)].copy()
+        # unieke dienstnummers binnen deze teamcoach-selectie
+        ids_tc = (
+            df_tc["dienstnummer"]
             .astype(str)
             .str.extract(r"(\d+)", expand=False)
             .dropna()
             .map(str)
         )
-        gefilterde_ids = set(gefilterde_ids)
+        ids_tc = set(ids_tc)
     else:
-        gefilterde_ids = set()
+        ids_tc = set()
 
-    # Snij met coachingslijsten (tellen als unieke personen)
-    geel_count  = len(gefilterde_ids & set(map(str, gecoachte_ids)))
-    blauw_count = len(gefilterde_ids & set(map(str, coaching_ids)))
+    # Tellen als unieke chauffeurs (snij met coachingslijsten)
+    geel_count  = len(ids_tc & set(map(str, gecoachte_ids)))
+    blauw_count = len(ids_tc & set(map(str, coaching_ids)))
 
     st.write(f"🟡 Voltooide coachings: **{geel_count}**")
     st.write(f"🔵 Coaching (lopend): **{blauw_count}**")
-    st.caption("Toont aantallen voor de huidige selectie (incl. teamcoach-filter).")
+    st.caption("Negeert overige filters; volgt alleen de teamcoach-selectie.")
 
 
 tab1, tab3, tab4, tab5 = st.tabs(
