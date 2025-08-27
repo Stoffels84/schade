@@ -858,9 +858,9 @@ with tab5:
                 naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
 
                 # Badge bepalen uit een voorbeeldrij (eerste resultaat)
-example_row = res.iloc[0].to_dict()
-badge = badge_for_row(example_row)
-st.markdown(f"**👤 Chauffeur:** {badge}{naam_chauffeur}")
+                example_row = res.iloc[0].to_dict()
+                badge = badge_for_row(example_row)
+                st.markdown(f"**👤 Chauffeur:** {badge}{naam_chauffeur}")
 
                 st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
                 st.markdown("---")
