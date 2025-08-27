@@ -179,14 +179,16 @@ def status_van_dn(dn: str | int | None) -> str:
     if dn is None or (isinstance(dn, float) and pd.isna(dn)):
         return "Geen"
     s = ''.join(ch for ch in str(dn) if str(ch).isdigit())
+    s = s.lstrip('0')  # <<< belangrijk: voorloopnullen weg
     if not s:
         return "Geen"
-    in_geel = s in gecoachte_ids
+    in_geel  = s in gecoachte_ids
     in_blauw = s in coaching_ids
     if in_geel and in_blauw: return "Beide"
     if in_geel:              return "Voltooid"
     if in_blauw:             return "Coaching"
     return "Geen"
+
 
 def badge_for_row(row) -> str:
     """Geef de juiste badge(s) terug voor een rij met chauffeur-info.
