@@ -26,76 +26,6 @@ st_autorefresh(interval=3600 * 1000, key="data_refresh")
 def hash_wachtwoord(wachtwoord: str) -> str:
     return hashlib.sha256(str(wachtwoord).encode()).hexdigest()
 
-@st.cache_data(show_spinner=False, ttl=3600)  # cache max 1 uur geldig
-def load_excel(path, **kwargs):
-    try:
-        return pd.read_excel(path, **kwargs)
-    except FileNotFoundError:
-        st.error(f"Bestand niet gevonden: {path}")
-        st.stop()
-    except Exception as e:
-        st.error(f"Kon '{path}' niet lezen: {e}")
-        st.stop()
-
-def norm_pnr(x) -> str:
-    """Maak personeels-/dienstnummer consistent: alleen cijfers, strip voorloopnullen."""
-    s = ''.join(ch for ch in str(x) if str(ch).isdigit())
-    s = s.lstrip('0')
-    return s if s else ""
-
-def naam_naar_dn(naam: str) -> str | None:
-    """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
-    if pd.isna(naam):
-        return None
-    s = str(naam).strip()
-    m = re.match(r"\s*(\d+)", s)
-    return m.group(1) if m else None
-
-def toon_chauffeur(x):
-    """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
-    if x is None or pd.isna(x):
-        return "onbekend"
-    s = str(x).strip()
-    if not s or s.lower() in {"nan", "none", "<na>"}:
-        return "onbekend"
-    s = re.sub(r"^\s*\d+\s*-\s*", "", s)  # strip '1234 - '
-    return s
-
-def safe_name(x) -> str:
-    s = "" if x is pd.NA else str(x or "").strip()
-    return "onbekend" if s.lower() in {"nan", "none", ""} else s
-
-def _parse_excel_dates(series: pd.Series) -> pd.Series:
-    """Robuuste datumparser: eerst ISO, dan EU (dayfirst), dan US."""
-    d0 = pd.to_datetime(series, errors="coerce", format="ISO8601")
-    need = d0.isna()
-    if need.any():
-        d1 = pd.to_datetime(series[need], errors="coerce", dayfirst=True)
-        d0.loc[need] = d1
-        need = d0.isna()
-        if need.any():
-            d2 = pd.to_datetime(series[need], errors="coerce", dayfirst=False)
-            d0.loc[need] = d2
-    return d0
-
-# Kleine helper om hyperlinks uit Excel-formules te halen
-HYPERLINK_RE = re.compile(r'HYPERLINK\(\s*"([^"]+)"', re.IGNORECASE)
-
-def extract_url(x) -> str | None:
-    if pd.isna(x):
-        return None
-    s = str(x).strip()
-    if s.startswith(("http://", "https://")):
-        return s
-    m = HYPERLINK_RE.search(s)
-    return m.group(1) if m else None
-
-# ========= Kleuren / status =========
-COLOR_GEEL  = "#FFD54F"  # voltooide coaching
-COLOR_BLAUW = "#2196F3"  # in coaching
-COLOR_MIX   = "#7E57C2"  # beide
-COLOR_GRIJS = "#BDBDBD"  # geen
-
 @st.cache_data(show_spinner=False, ttl=3600)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
@@ -104,15 +34,20 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     except Exception as e:
         return ids_geel, ids_blauw, f"Coachingslijst niet gevonden of onleesbaar: {e}"
 
-    def norm(s):
+    def norm_sheet(s: str) -> str:
         return str(s).strip().lower().replace("_", " ").replace("-", " ")
 
     geel_varianten  = {"voltooide coachings", "voltooid", "afgerond", "afgehandeld"}
     blauw_varianten = {"coaching", "coaching (lopend)", "lopend", "in coaching"}
 
     def vind_sheet(varianten):
+        # 1) eerst exacte match “Voltooide coachings”
         for s in xls.sheet_names:
-            ns = norm(s)
+            if s.strip().lower() == "voltooide coachings":
+                return s
+        # 2) anders fuzzy
+        for s in xls.sheet_names:
+            ns = norm_sheet(s)
             if any(v in ns for v in varianten):
                 return s
         return None
@@ -120,14 +55,17 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     def haal_ids(sheetnaam):
         if not sheetnaam:
             return set()
-        # Specifiek voor 'Voltooide coachings': kolom B (P-nr)
-        if sheetnaam == "Voltooide coachings":
-            dfc = pd.read_excel(xls, sheet_name=sheetnaam, usecols="B")
-            if dfc.shape[1] == 0:
-                return set()
-            kol = dfc.columns[0]
-            series = dfc[kol].apply(norm_pnr)
-            return set([s for s in series.tolist() if s])
+
+        # --- Probeer kolom B expliciet ---
+        try:
+            dfB = pd.read_excel(xls, sheet_name=sheetnaam, usecols="B")
+            if dfB.shape[1] >= 1 and dfB[dfB.columns[0]].notna().any():
+                series = dfB[dfB.columns[0]].apply(norm_pnr)
+                return {s for s in series.tolist() if s}
+        except Exception:
+            pass  # val terug
+
+        # --- Vangnet: hele sheet, zoek kolomnaam varianten ---
         dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         dfc.columns = dfc.columns.str.strip().str.lower()
         kandidaten = [
@@ -135,17 +73,28 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             "personeelsnr","persnr","dienstnummer","p nr","p#","p .nr"
         ]
         kol = next((k for k in kandidaten if k in dfc.columns), None)
-        if kol is None:
-            return set()
-        series = dfc[kol].apply(norm_pnr)
-        return set([s for s in series.tolist() if s])
+        if kol is not None:
+            series = dfc[kol].apply(norm_pnr)
+            return {s for s in series.tolist() if s}
 
-    s_geel = "Voltooide coachings" if "Voltooide coachings" in xls.sheet_names else vind_sheet(geel_varianten)
+        # --- Laatste redmiddel: kies eerste kolom die vooral cijfers bevat ---
+        for c in dfc.columns:
+            s = dfc[c].astype(str).str.replace(r"\D", "", regex=True)
+            if (s.str.len() > 0).mean() > 0.6:  # >60% cellen lijken nummer
+                series = s.apply(norm_pnr)
+                ids = {x for x in series.tolist() if x}
+                if ids:
+                    return ids
+        return set()
+
+    s_geel = vind_sheet(geel_varianten)
     s_blauw = vind_sheet(blauw_varianten)
+
     if s_geel:  ids_geel  = haal_ids(s_geel)
     if s_blauw: ids_blauw = haal_ids(s_blauw)
 
     return ids_geel, ids_blauw, None
+
 
 # ==== Sets worden later gevuld na data-load (maar functies hier al gedefinieerd) ====
 def status_van_chauffeur(naam: str) -> str:
