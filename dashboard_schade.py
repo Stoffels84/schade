@@ -37,6 +37,11 @@ def load_excel(path, **kwargs):
         st.error(f"Kon '{path}' niet lezen: {e}")
         st.stop()
 
+def norm_pnr(x) -> str:
+    """Maak personeels-/dienstnummer consistent: alleen cijfers, strip voorloopnullen."""
+    s = ''.join(ch for ch in str(x) if str(ch).isdigit())
+    s = s.lstrip('0')
+    return s if s else ""
 
 def naam_naar_dn(naam: str) -> str | None:
     """Haal dienstnummer uit 'volledige naam' zoals '1234 - Voornaam Achternaam'."""
@@ -45,7 +50,6 @@ def naam_naar_dn(naam: str) -> str | None:
     s = str(naam).strip()
     m = re.match(r"\s*(\d+)", s)
     return m.group(1) if m else None
-
 
 def toon_chauffeur(x):
     """Geef nette chauffeur-naam terug, met fallback. Knipt vooraan '1234 - ' weg."""
@@ -57,11 +61,9 @@ def toon_chauffeur(x):
     s = re.sub(r"^\s*\d+\s*-\s*", "", s)  # strip '1234 - '
     return s
 
-
 def safe_name(x) -> str:
     s = "" if x is pd.NA else str(x or "").strip()
     return "onbekend" if s.lower() in {"nan", "none", ""} else s
-
 
 def _parse_excel_dates(series: pd.Series) -> pd.Series:
     """Robuuste datumparser: eerst ISO, dan EU (dayfirst), dan US."""
@@ -124,12 +126,8 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             if dfc.shape[1] == 0:
                 return set()
             kol = dfc.columns[0]
-            series = (
-                dfc[kol].astype(str)
-                .str.replace(" ", "", regex=False)
-                .str.replace("[^0-9]", "", regex=True)
-            )
-            return set(series[series.str.len() > 0].tolist())
+            series = dfc[kol].apply(norm_pnr)
+            return set([s for s in series.tolist() if s])
         dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         dfc.columns = dfc.columns.str.strip().str.lower()
         kandidaten = [
@@ -139,12 +137,8 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol = next((k for k in kandidaten if k in dfc.columns), None)
         if kol is None:
             return set()
-        series = (
-            dfc[kol].astype(str)
-            .str.replace(r"\s", "", regex=True)
-            .str.replace(r"[^\d]", "", regex=True)
-        )
-        return set(series[series.str.len() > 0].tolist())
+        series = dfc[kol].apply(norm_pnr)
+        return set([s for s in series.tolist() if s])
 
     s_geel = "Voltooide coachings" if "Voltooide coachings" in xls.sheet_names else vind_sheet(geel_varianten)
     s_blauw = vind_sheet(blauw_varianten)
@@ -153,33 +147,19 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
     return ids_geel, ids_blauw, None
 
-# Sets worden later gevuld na data-load
+# ==== Sets worden later gevuld na data-load (maar functies hier al gedefinieerd) ====
 def status_van_chauffeur(naam: str) -> str:
     dn = naam_naar_dn(naam)
-    if not dn:
-        return "Geen"
-    sdn = str(dn)
-    in_geel = sdn in gecoachte_ids
-    in_blauw = sdn in coaching_ids
-    if in_geel and in_blauw:
-        return "Beide"
-    if in_geel:
-        return "Voltooid"
-    if in_blauw:
-        return "Coaching"
-    return "Geen"
-
+    return status_van_dn(dn)
 
 def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
-
 def status_van_dn(dn: str | int | None) -> str:
-    """Status bepalen op basis van personeels-/dienstnummer (P-nr)."""
+    """Status bepalen op basis van personeels-/dienstnummer (P-nr), altijd genormaliseerd."""
     if dn is None or (isinstance(dn, float) and pd.isna(dn)):
         return "Geen"
-    s = ''.join(ch for ch in str(dn) if str(ch).isdigit())
-    s = s.lstrip('0')  # <<< belangrijk: voorloopnullen weg
+    s = norm_pnr(dn)
     if not s:
         return "Geen"
     in_geel  = s in gecoachte_ids
@@ -189,18 +169,21 @@ def status_van_dn(dn: str | int | None) -> str:
     if in_blauw:             return "Coaching"
     return "Geen"
 
-
 def badge_for_row(row) -> str:
     """Geef de juiste badge(s) terug voor een rij met chauffeur-info.
-    Prefer 'dienstnummer' (P-nr) als die kolom aanwezig is; anders val terug op naam.
+    Prefer 'dienstnummer_norm' (dan 'dienstnummer'); anders val terug op naam.
     """
     dn_val = None
-    if hasattr(row, 'index') and 'dienstnummer' in row.index:
-        dn_val = row.get('dienstnummer')
+    if hasattr(row, 'index') and 'dienstnummer_norm' in row.index:
+        dn_val = row.get('dienstnummer_norm')
+    elif isinstance(row, dict) and 'dienstnummer_norm' in row:
+        dn_val = row.get('dienstnummer_norm')
+    elif hasattr(row, 'index') and 'dienstnummer' in row.index:
+        dn_val = norm_pnr(row.get('dienstnummer'))
     elif isinstance(row, dict) and 'dienstnummer' in row:
-        dn_val = row.get('dienstnummer')
+        dn_val = norm_pnr(row.get('dienstnummer'))
 
-    if dn_val is not None and not (isinstance(dn_val, float) and pd.isna(dn_val)):
+    if dn_val:
         return badge_van_status(status_van_dn(dn_val))
 
     # Fallback via naam-parsing (minder betrouwbaar)
@@ -334,17 +317,21 @@ df["BusTram_disp"]        = df["Bus/ Tram"].apply(safe_name)
 # Overige afgeleiden
 dn = df["volledige naam"].astype(str).str.extract(r"^(\d+)", expand=False)
 df["dienstnummer"] = dn.astype("string").str.strip()
+df["dienstnummer_norm"] = df["dienstnummer"].apply(norm_pnr)  # ✅ genormaliseerde P-nr
 df["KwartaalP"]    = df["Datum"].dt.to_period("Q")
 df["Kwartaal"]     = df["KwartaalP"].astype(str)
 
 # ========= Coachingslijst =========
 gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
+# ✅ normaliseer sets meteen
+gecoachte_ids = {norm_pnr(s) for s in gecoachte_ids if s}
+coaching_ids  = {norm_pnr(s) for s in coaching_ids if s}
 if coach_warn:
     st.sidebar.warning(f"⚠️ {coach_warn}")
 
-# Flags op df (optioneel)
-df["gecoacht_geel"]  = df["dienstnummer"].astype(str).isin(gecoachte_ids)
-df["gecoacht_blauw"] = df["dienstnummer"].astype(str).isin(coaching_ids)
+# Flags op df (optioneel en correct genormaliseerd)
+df["gecoacht_geel"]  = df["dienstnummer_norm"].isin(gecoachte_ids)
+df["gecoacht_blauw"] = df["dienstnummer_norm"].isin(coaching_ids)
 
 # ========= UI: Titel + Caption =========
 st.title("📊 Schadegevallen Dashboard")
@@ -462,13 +449,12 @@ with st.sidebar:
 
     if not alle_tc_geselecteerd:
         # alleen teamcoach-filter toepassen op de VOLLEDIGE df (geen locatie/voertuig/kwartaal)
-        if {"teamcoach_disp","dienstnummer"}.issubset(df.columns):
+        if {"teamcoach_disp","dienstnummer_norm"}.issubset(df.columns):
             ids_tc = (
-                df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
+                df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer_norm"]
                   .astype(str)
-                  .str.replace(r"[^\d]", "", regex=True)
             )
-            ids_tc = set(ids_tc[ids_tc.str.len() > 0].tolist())
+            ids_tc = set([norm_pnr(x) for x in ids_tc.tolist() if x])
         else:
             ids_tc = set()
 
@@ -478,9 +464,9 @@ with st.sidebar:
         st.write(f"🟡 Voltooide coachings: **{geel}**")
         st.write(f"🔵 Coaching (lopend): **{blauw}**")
         st.caption("Gefilterd op geselecteerde teamcoaches.")
-        # 🐞 DEBUG overlap (tijdelijk)
+        # 🐞 DEBUG overlap (genormaliseerd)
         try:
-            ids_in_df = set(df["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).dropna())
+            ids_in_df = set(df["dienstnummer_norm"].dropna().astype(str))
             st.caption(f"🐞 DEBUG overlap — geel: {len(ids_in_df & set(gecoachte_ids))} | blauw: {len(ids_in_df & set(coaching_ids))}")
         except Exception as e:
             st.caption(f"🐞 DEBUG error: {e}")
@@ -488,9 +474,9 @@ with st.sidebar:
         st.write(f"🟡 Voltooide coachings: **{totaal_geel}**")
         st.write(f"🔵 Coaching (lopend): **{totaal_blauw}**")
         st.caption("Totaal volgens Coachingslijst.xlsx.")
-        # 🐞 DEBUG overlap (tijdelijk)
+        # 🐞 DEBUG overlap (genormaliseerd)
         try:
-            ids_in_df = set(df["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).dropna())
+            ids_in_df = set(df["dienstnummer_norm"].dropna().astype(str))
             st.caption(f"🐞 DEBUG overlap — geel: {len(ids_in_df & set(gecoachte_ids))} | blauw: {len(ids_in_df & set(coaching_ids))}")
         except Exception as e:
             st.caption(f"🐞 DEBUG error: {e}")
@@ -507,7 +493,7 @@ pdf_coach = st.sidebar.selectbox("Kies teamcoach voor export", teamcoach_options
 generate_pdf = st.sidebar.button("Genereer PDF")
 
 if generate_pdf:
-    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp"]
+    kolommen_pdf = ["Datum", "volledige naam_disp", "Locatie_disp", "BusTram_disp", "dienstnummer_norm"]
     if "Link" in df.columns:
         kolommen_pdf.append("Link")
 
@@ -539,7 +525,9 @@ if generate_pdf:
     aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
     elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
     for nm, count in aantal_per_chauffeur.items():
-        status = status_van_chauffeur(nm)
+        # status via genormaliseerde P-nr uit de rijen
+        dn_1 = schade_pdf.loc[schade_pdf["volledige naam_disp"] == nm, "dienstnummer_norm"].iloc[0] if "dienstnummer_norm" in schade_pdf.columns else None
+        status = status_van_dn(dn_1) if dn_1 else status_van_chauffeur(nm)
         badge = badge_van_status(status)
         elements.append(Paragraph(f"- {badge}{safe_name(nm)}: {count}", styles["Normal"]))
     elements.append(Spacer(1, 12))
@@ -626,14 +614,13 @@ with tab1:
         # Basis dataframe voor de grafiek
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
 
-        # --- Status baseren op DIENSTNUMMER (niet op naam) ---
+        # Koppel chauffeur -> genormaliseerd pnr uit de gefilterde set
         name_to_dn_df = (
-            df_filtered[["volledige naam_disp", "dienstnummer"]]
+            df_filtered[["volledige naam_disp", "dienstnummer_norm"]]
             .dropna()
             .drop_duplicates("volledige naam_disp")
         )
-        name_to_dn_df["dienstnummer"] = name_to_dn_df["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
-        name_to_dn = name_to_dn_df.set_index("volledige naam_disp")["dienstnummer"].to_dict()
+        name_to_dn = name_to_dn_df.set_index("volledige naam_disp")["dienstnummer_norm"].to_dict()
 
         plot_df["status"] = plot_df["chauffeur"].map(lambda nm: status_van_dn(name_to_dn.get(nm)))
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
@@ -689,9 +676,9 @@ with tab1:
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
                         # Neem DIENSTNUMMER mee, zodat we per rij correct kunnen badgen
-                        cols = ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                        cols = ["Datum", "dienstnummer_norm", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
                                if "Link" in df_filtered.columns else \
-                               ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                               ["Datum", "dienstnummer_norm", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
                         schade_chauffeur = (
                             df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
                             .sort_values(by="Datum")
@@ -702,7 +689,7 @@ with tab1:
                             loc       = row["Locatie_disp"]
                             coach     = row["teamcoach_disp"]
                             link      = extract_url(row.get("Link")) if "Link" in cols else None
-                            badge_r = badge_van_status(status_van_dn(row.get("dienstnummer")))
+                            badge_r = badge_van_status(status_van_dn(row.get("dienstnummer_norm")))
                             prefix = f"📅 {datum_str} — 👤 {badge_r}{toon_chauffeur(chauffeur_label)} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                             if isinstance(link, str) and link:
                                 st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
@@ -777,7 +764,7 @@ with tab3:
             st.subheader("📂 Schadegevallen per voertuigtype")
 
             for voertuig in chart_data.sort_values(ascending=False).index.tolist():
-                kol_list = ["Datum", "dienstnummer", "volledige naam_disp"]
+                kol_list = ["Datum", "dienstnummer_norm", "volledige naam_disp"]
                 if voertuig_col not in kol_list:
                     kol_list.append(voertuig_col)
                 if "Link" in df_filtered.columns:
@@ -805,7 +792,7 @@ with tab3:
                             coach     = row.get("teamcoach_disp", "onbekend")
                             locatie   = row.get("Locatie_disp", "onbekend")
                             link      = extract_url(row.get("Link")) if "Link" in schade_per_voertuig.columns else None
-                            badge = badge_van_status(status_van_dn(row.get("dienstnummer")))
+                            badge = badge_van_status(status_van_dn(row.get("dienstnummer_norm")))
 
                             prefix = f"📅 {datum_str} — 👤 {badge}{chauffeur} — 🧑‍💼 {coach} — 📍 {locatie} — "
                             if isinstance(link, str) and link:
@@ -836,7 +823,7 @@ with tab4:
             st.subheader("📂 Schadegevallen per locatie")
 
             for locatie in chart_data.sort_values(ascending=False).index.tolist():
-                kol_list = ["Datum", "dienstnummer", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
+                kol_list = ["Datum", "dienstnummer_norm", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
                 if "Link" in df_filtered.columns:
                     kol_list.append("Link")
                 aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
@@ -857,7 +844,7 @@ with tab4:
                             voertuig  = row.get("BusTram_disp", "onbekend")
                             coach     = row.get("teamcoach_disp", "onbekend")
                             link = extract_url(row.get("Link")) if "Link" in schade_per_locatie.columns else None
-                            badge = badge_van_status(status_van_dn(row.get("dienstnummer")))
+                            badge = badge_van_status(status_van_dn(row.get("dienstnummer_norm")))
 
                             prefix = f"📅 {datum_str} — 👤 {badge}{chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
                             if isinstance(link, str) and link:
@@ -872,15 +859,15 @@ with tab5:
     zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
 
     dn_in = re.findall(r"\d+", str(zoek))
-    dn_in = dn_in[0] if dn_in else ""
+    dn_in = norm_pnr(dn_in[0]) if dn_in else ""
 
     if not dn_in:
         st.info("Geef een personeelsnummer in om resultaten te zien.")
     else:
-        if "dienstnummer" not in df.columns:
-            st.error("Kolom 'dienstnummer' ontbreekt in de data.")
+        if "dienstnummer_norm" not in df.columns:
+            st.error("Kolom 'dienstnummer_norm' ontbreekt in de data.")
         else:
-            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
+            res = df[df["dienstnummer_norm"] == dn_in].copy()
 
             if res.empty:
                 st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
