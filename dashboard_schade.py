@@ -366,9 +366,29 @@ st.download_button(
 
 # ========= Coaching-status in sidebar =========
 with st.sidebar:
-    st.markdown("### ℹ️ Coaching-status")
-    st.write(f"🟡 Voltooide coachings: **{len(gecoachte_ids)}**")
-    st.write(f"🔵 Coaching (lopend): **{len(coaching_ids)}**")
+    st.markdown("### ℹ️ Coaching-status (gefilterd)")
+
+    # Unieke dienstnummers binnen de huidige selectie
+    if "dienstnummer" in df_filtered.columns:
+        gefilterde_ids = (
+            df_filtered["dienstnummer"]
+            .astype(str)
+            .str.extract(r"(\d+)", expand=False)
+            .dropna()
+            .map(str)
+        )
+        gefilterde_ids = set(gefilterde_ids)
+    else:
+        gefilterde_ids = set()
+
+    # Snij met coachingslijsten (tellen als unieke personen)
+    geel_count  = len(gefilterde_ids & set(map(str, gecoachte_ids)))
+    blauw_count = len(gefilterde_ids & set(map(str, coaching_ids)))
+
+    st.write(f"🟡 Voltooide coachings: **{geel_count}**")
+    st.write(f"🔵 Coaching (lopend): **{blauw_count}**")
+    st.caption("Toont aantallen voor de huidige selectie (incl. teamcoach-filter).")
+
 
 tab1, tab3, tab4, tab5 = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken"]
