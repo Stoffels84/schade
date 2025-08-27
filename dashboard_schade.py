@@ -582,9 +582,7 @@ with tab1:
                                 st.markdown(prefix + "❌ Geen geldige link")
 
 
-
-# ========= TAB 3: Voertuig =========
-# ========= TAB 3: Voertuig =========
+# ========= TAB 2: Voertuig =========
 with tab3:
     # --- Deel 1: Lijngrafiek per maand (nu met JAAR-MAAND) ---
     st.subheader("📈 Schadegevallen per maand per voertuigtype")
@@ -700,7 +698,7 @@ with tab3:
                             else:
                                 st.markdown(prefix + "❌ Geen geldige link")
 
-# ========= TAB 4: Locatie =========
+# ========= TAB 3: Locatie =========
 with tab4:
     st.subheader("Aantal schadegevallen per locatie")
 
@@ -765,7 +763,7 @@ with tab4:
 # ... jouw bestaande tab1..tab4 code blijft ...
 
 
-# ========= TAB 5: Opzoeken =========
+# ========= TAB 4: Opzoeken =========
 with tab5:
     st.subheader("🔎 Opzoeken op personeelsnummer")
 
