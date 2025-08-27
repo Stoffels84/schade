@@ -383,30 +383,39 @@ st.download_button(
 
 # ========= Coaching-status in sidebar =========
 with st.sidebar:
-    st.markdown("### ℹ️ Coaching-status (volgens teamcoach-filter)")
+    st.markdown("### ℹ️ Coaching-status")
 
-    # ➜ Alleen teamcoach-filter toepassen (andere filters negeren)
-    if "teamcoach_disp" in df.columns and "dienstnummer" in df.columns:
-        df_tc = df[df["teamcoach_disp"].isin(selected_teamcoaches)].copy()
-        # unieke dienstnummers binnen deze teamcoach-selectie
-        ids_tc = (
-            df_tc["dienstnummer"]
-            .astype(str)
-            .str.extract(r"(\d+)", expand=False)
-            .dropna()
-            .map(str)
-        )
-        ids_tc = set(ids_tc)
+    # 1) Totale aantallen rechtstreeks uit de coachingslijst
+    totaal_geel  = len(gecoachte_ids)
+    totaal_blauw = len(coaching_ids)
+
+    # 2) Als teamcoach-filter beperkt is, toon snede binnen selectie
+    alle_tc_geselecteerd = set(selected_teamcoaches) == set(teamcoach_options)
+
+    if not alle_tc_geselecteerd:
+        # alleen teamcoach-filter toepassen op de VOLLEDIGE df (geen locatie/voertuig/kwartaal)
+        if {"teamcoach_disp","dienstnummer"}.issubset(df.columns):
+            ids_tc = (
+                df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
+                  .astype(str)
+                  .str.replace(r"[^\d]", "", regex=True)
+            )
+            ids_tc = set(ids_tc[ids_tc.str.len() > 0].tolist())
+        else:
+            ids_tc = set()
+
+        geel = len(ids_tc & set(gecoachte_ids))
+        blauw = len(ids_tc & set(coaching_ids))
+
+        st.write(f"🟡 Voltooide coachings: **{geel}**")
+        st.write(f"🔵 Coaching (lopend): **{blauw}**")
+        st.caption("Gefilterd op geselecteerde teamcoaches.")
     else:
-        ids_tc = set()
+        # alle coaches geselecteerd → toon totale lijstcijfers (match met Excel)
+        st.write(f"🟡 Voltooide coachings: **{totaal_geel}**")
+        st.write(f"🔵 Coaching (lopend): **{totaal_blauw}**")
+        st.caption("Totaal volgens Coachingslijst.xlsx.")
 
-    # Tellen als unieke chauffeurs (snij met coachingslijsten)
-    geel_count  = len(ids_tc & set(map(str, gecoachte_ids)))
-    blauw_count = len(ids_tc & set(map(str, coaching_ids)))
-
-    st.write(f"🟡 Voltooide coachings: **{geel_count}**")
-    st.write(f"🔵 Coaching (lopend): **{blauw_count}**")
-    st.caption("Negeert overige filters; volgt alleen de teamcoach-selectie.")
 
 
 tab1, tab3, tab4, tab5 = st.tabs(
