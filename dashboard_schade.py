@@ -110,7 +110,7 @@ def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
 # ========= Coachingslijst inlezen (Voltooid/Coaching) =========
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, ttl=3600)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
     try:
@@ -118,31 +118,48 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     except Exception as e:
         return ids_geel, ids_blauw, f"Coachingslijst niet gevonden of onleesbaar: {e}"
 
-    def vind_sheet(xls, naam):
-        return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
+    # tolerante sheetmatching
+    def norm(s): 
+        return str(s).strip().lower().replace("_"," ").replace("-", " ")
+
+    geel_varianten  = {"voltooide coachings", "voltooid", "afgerond", "afgehandeld"}
+    blauw_varianten = {"coaching", "coaching (lopend)", "lopend", "in coaching"}
+
+    def vind_sheet(varianten):
+        for s in xls.sheet_names:
+            ns = norm(s)
+            if any(v in ns for v in varianten):
+                return s
+        return None
 
     def haal_ids(sheetnaam):
+        if not sheetnaam:
+            return set()
         dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         dfc.columns = dfc.columns.str.strip().str.lower()
-        kol = None
-        for k in ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]:
-            if k in dfc.columns:
-                kol = k; break
+        # meer kolomvarianten toestaan
+        kandidaten = [
+            "p-nr","p_nr","pnr","pnummer","p nummer","p-nummer","personeelsnummer",
+            "personeelsnr","persnr","dienstnummer","p nr","p#", "p .nr"
+        ]
+        kol = next((k for k in kandidaten if k in dfc.columns), None)
         if kol is None:
             return set()
-        return set(
-            dfc[kol].astype(str).str.extract(r"(\d+)", expand=False)
-            .dropna().str.strip().tolist()
+        # haal alleen cijfers, behoud eventuele leidende nullen
+        series = (
+            dfc[kol].astype(str)
+            .str.replace(r"\s", "", regex=True)
+            .str.replace(r"[^\d]", "", regex=True)
         )
+        return set(series[series.str.len() > 0].tolist())
 
-    s_geel = vind_sheet(xls, "voltooide coachings")
-    s_blauw = vind_sheet(xls, "coaching")
-    if s_geel:
-        ids_geel = haal_ids(s_geel)
-    if s_blauw:
-        ids_blauw = haal_ids(s_blauw)
+    s_geel  = vind_sheet(geel_varianten)
+    s_blauw = vind_sheet(blauw_varianten)
+    if s_geel:  ids_geel  = haal_ids(s_geel)
+    if s_blauw: ids_blauw = haal_ids(s_blauw)
 
     return ids_geel, ids_blauw, None
+
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
