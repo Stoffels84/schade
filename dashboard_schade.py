@@ -109,6 +109,24 @@ def status_van_chauffeur(naam: str) -> str:
 def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
+def badge_for_row(row) -> str:
+    """
+    Geef de juiste badge(s) terug voor een rij met chauffeur-info.
+    Probeert eerst 'volledige naam' (bevat vaak het dienstnummer), 
+    valt anders terug op 'volledige naam_disp'.
+    """
+    naam_src = None
+    if "volledige naam" in row and pd.notna(row.get("volledige naam")):
+        naam_src = row.get("volledige naam")
+    elif "volledige naam_disp" in row and pd.notna(row.get("volledige naam_disp")):
+        naam_src = row.get("volledige naam_disp")
+    else:
+        naam_src = None
+
+    status = status_van_chauffeur(naam_src)  # gebruikt jouw sets gecoachte_ids/coaching_ids
+    return badge_van_status(status)  # 🟡 / 🔵 / 🟡🔵 of ""
+
+
 # ========= Coachingslijst inlezen (Voltooid/Coaching) =========
 @st.cache_data(show_spinner=False, ttl=3600)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
@@ -839,7 +857,11 @@ with tab5:
                 naam_chauffeur = res["volledige naam_disp"].iloc[0]
                 naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
 
-                st.markdown(f"**👤 Chauffeur:** {naam_chauffeur}")
+                # Badge bepalen uit een voorbeeldrij (eerste resultaat)
+example_row = res.iloc[0].to_dict()
+badge = badge_for_row(example_row)
+st.markdown(f"**👤 Chauffeur:** {badge}{naam_chauffeur}")
+
                 st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
                 st.markdown("---")
 
