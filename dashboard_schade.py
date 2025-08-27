@@ -564,6 +564,7 @@ if generate_pdf:
             pass
 
 # ========= TAB 1: Chauffeur =========
+# ========= TAB 1: Chauffeur =========
 with tab1:
     st.subheader("📂 Schadegevallen per chauffeur")
 
@@ -572,10 +573,35 @@ with tab1:
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Basis dataframe voor de grafiek
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
-        plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
+        # --- Status baseren op DIENSTNUMMER (niet op naam) ---
+        # Map van weergavenaam -> (alleen-cijfer) dienstnummer binnen de huidige selectie
+        name_to_dn = (
+            df_filtered[["volledige naam_disp", "dienstnummer"]]
+            .dropna()
+            .drop_duplicates("volledige naam_disp")
+            .assign(dienstnummer=lambda d: d["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False))
+            .set_index("volledige naam_disp")["dienstnummer"].to_dict()
+        )
+
+        def status_from_name(nm: str) -> str:
+            dn = name_to_dn.get(nm)
+            if not dn or pd.isna(dn):
+                return "Geen"
+            sdn = str(dn)
+            in_geel  = sdn in gecoachte_ids
+            in_blauw = sdn in coaching_ids
+            if in_geel and in_blauw: return "Beide"
+            if in_geel:              return "Voltooid"
+            if in_blauw:             return "Coaching"
+            return "Geen"
+
+        plot_df["status"] = plot_df["chauffeur"].map(status_from_name)
+        plot_df["badge"]  = plot_df["status"].map(badge_van_status)
+
+        # ========== KPI blok ==========
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
         totaal_schades = int(plot_df["aantal"].sum())
 
@@ -597,7 +623,7 @@ with tab1:
         if handmatig_aantal != totaal_chauffeurs_auto:
             st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
 
-        # Bins maken
+        # ========== Accordeons per interval ==========
         step = 5
         max_val = int(plot_df["aantal"].max()) if not plot_df.empty else 0
         edges = [0, step] if max_val <= 0 else list(range(0, max_val + step, step))
@@ -622,29 +648,41 @@ with tab1:
                 for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
                     chauffeur_label = rec["chauffeur"]
                     aantal = int(rec["aantal"])
-                    status = rec["status"]
                     badge  = rec["badge"]
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
-                        cols = ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
+                        # Neem DIENSTNUMMER mee, zodat we per rij correct kunnen badgen
+                        cols = ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
                                if "Link" in df_filtered.columns else \
-                               ["Datum", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+                               ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
+
                         schade_chauffeur = (
                             df_filtered.loc[df_filtered["volledige naam_disp"] == chauffeur_label, cols]
                             .sort_values(by="Datum")
                         )
+
                         for _, row in schade_chauffeur.iterrows():
                             datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
                             voertuig  = row["BusTram_disp"]
                             loc       = row["Locatie_disp"]
                             coach     = row["teamcoach_disp"]
-                            link      = extract_url(row.get("Link")) if "Link" in cols else None
-                            badge_r   = badge_for_row(row)
+
+                            # Badge bepalen obv dienstnummer in de rij
+                            dn_row = row.get("dienstnummer")
+                            dn_row = re.findall(r"(\d+)", str(dn_row))
+                            dn_row = dn_row[0] if dn_row else None
+                            in_geel  = bool(dn_row and dn_row in gecoachte_ids)
+                            in_blauw = bool(dn_row and dn_row in coaching_ids)
+                            status_r = "Beide" if (in_geel and in_blauw) else ("Voltooid" if in_geel else ("Coaching" if in_blauw else "Geen"))
+                            badge_r  = badge_van_status(status_r)
+
+                            link = extract_url(row.get("Link")) if "Link" in cols else None
                             prefix = f"📅 {datum_str} — 👤 {badge_r}{toon_chauffeur(chauffeur_label)} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
                             if isinstance(link, str) and link:
                                 st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
                             else:
                                 st.markdown(prefix + "❌ Geen geldige link")
+
 
 # ========= TAB 3: Voertuig =========
 with tab3:
