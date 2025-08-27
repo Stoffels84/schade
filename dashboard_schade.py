@@ -476,10 +476,22 @@ with st.sidebar:
         st.write(f"🟡 Voltooide coachings: **{geel}**")
         st.write(f"🔵 Coaching (lopend): **{blauw}**")
         st.caption("Gefilterd op geselecteerde teamcoaches.")
+        # 🐞 DEBUG overlap (tijdelijk)
+        try:
+            ids_in_df = set(df["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).dropna())
+            st.caption(f"🐞 DEBUG overlap — geel: {len(ids_in_df & set(gecoachte_ids))} | blauw: {len(ids_in_df & set(coaching_ids))}")
+        except Exception as e:
+            st.caption(f"🐞 DEBUG error: {e}")
     else:
         st.write(f"🟡 Voltooide coachings: **{totaal_geel}**")
         st.write(f"🔵 Coaching (lopend): **{totaal_blauw}**")
         st.caption("Totaal volgens Coachingslijst.xlsx.")
+        # 🐞 DEBUG overlap (tijdelijk)
+        try:
+            ids_in_df = set(df["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).dropna())
+            st.caption(f"🐞 DEBUG overlap — geel: {len(ids_in_df & set(gecoachte_ids))} | blauw: {len(ids_in_df & set(coaching_ids))}")
+        except Exception as e:
+            st.caption(f"🐞 DEBUG error: {e}")
 
 # ========= Tabs (zonder Teamcoach-tab) =========
 tab1, tab3, tab4, tab5 = st.tabs([
@@ -609,15 +621,22 @@ with tab1:
     if chart_series.empty:
         st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
     else:
+        # Basis dataframe voor de grafiek
         plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
-        name_to_dn = (df_filtered[["volledige naam_disp", "dienstnummer"]]
-              .dropna()
-              .drop_duplicates("volledige naam_disp"))
-        name_to_dn["dienstnummer"] = name_to_dn["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
-        name_to_dn = name_to_dn.set_index("volledige naam_disp")["dienstnummer"].to_dict()
+
+        # --- Status baseren op DIENSTNUMMER (niet op naam) ---
+        name_to_dn_df = (
+            df_filtered[["volledige naam_disp", "dienstnummer"]]
+            .dropna()
+            .drop_duplicates("volledige naam_disp")
+        )
+        name_to_dn_df["dienstnummer"] = name_to_dn_df["dienstnummer"].apply(lambda x: ''.join(ch for ch in str(x) if str(ch).isdigit()))
+        name_to_dn = name_to_dn_df.set_index("volledige naam_disp")["dienstnummer"].to_dict()
+
         plot_df["status"] = plot_df["chauffeur"].map(lambda nm: status_van_dn(name_to_dn.get(nm)))
         plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
 
+        # ========== KPI blok ==========
         totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
         totaal_schades = int(plot_df["aantal"].sum())
 
@@ -639,7 +658,7 @@ with tab1:
         if handmatig_aantal != totaal_chauffeurs_auto:
             st.caption(f"ℹ️ Handmatige invoer actief: {handmatig_aantal} i.p.v. {totaal_chauffeurs_auto}.")
 
-        # Bins maken
+        # ========== Accordeons per interval ==========
         step = 5
         max_val = int(plot_df["aantal"].max()) if not plot_df.empty else 0
         edges = [0, step] if max_val <= 0 else list(range(0, max_val + step, step))
@@ -664,10 +683,10 @@ with tab1:
                 for _, rec in groep.sort_values("aantal", ascending=False).iterrows():
                     chauffeur_label = rec["chauffeur"]
                     aantal = int(rec["aantal"])
-                    status = rec["status"]
                     badge  = rec["badge"]
                     subtitel = f"{badge}{chauffeur_label} — {aantal} schadegevallen"
                     with st.expander(subtitel):
+                        # Neem DIENSTNUMMER mee, zodat we per rij correct kunnen badgen
                         cols = ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp", "Link"] \
                                if "Link" in df_filtered.columns else \
                                ["Datum", "dienstnummer", "BusTram_disp", "Locatie_disp", "teamcoach_disp"]
