@@ -785,4 +785,41 @@ with opzoeken_tab:
             res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
 
             if res.empty:
-                st.warning(f"Geen resul
+                st.warning(f"Geen resultaten gevonden voor personeelsnr **{dn_in}**.")
+            else:
+                naam_chauffeur = res["volledige naam_disp"].iloc[0]
+                naam_teamcoach = res["teamcoach_disp"].iloc[0] if "teamcoach_disp" in res.columns else "onbekend"
+
+                st.markdown(f"**👤 Chauffeur:** {naam_chauffeur}")
+                st.markdown(f"**🧑‍💼 Teamcoach:** {naam_teamcoach}")
+                st.markdown("---")
+
+                st.metric("Aantal schadegevallen", len(res))
+
+                heeft_link = "Link" in res.columns
+                res["URL"] = res["Link"].apply(extract_url) if heeft_link else None
+
+                toon_kol = ["Datum", "Locatie_disp"]
+                if heeft_link:
+                    toon_kol.append("URL")
+
+                res = res.sort_values("Datum", ascending=False)
+
+                if heeft_link:
+                    st.dataframe(
+                        res[toon_kol],
+                        column_config={
+                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                            "URL": st.column_config.LinkColumn("Link", display_text="🔗 openen")
+                        },
+                        use_container_width=True,
+                    )
+                else:
+                    st.dataframe(
+                        res[toon_kol],
+                        column_config={
+                            "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
+                            "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                        },
+                        use_container_wid
