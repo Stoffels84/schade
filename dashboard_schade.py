@@ -911,22 +911,24 @@ with coaching_tab:
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
 
+
+
+
 # ========= TAB 5: Coaching =========
 with coaching_tab:
     st.subheader("🎯 Coachingsoverzicht")
 
-    # ids uit dataset op basis van gekozen teamcoach(es)
+    # ids uit dataset (op basis van geselecteerde teamcoach(es))
     ids_bij_coach = set(
         df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
           .dropna().astype(str).str.extract(r"(\d+)", expand=False)
           .dropna().str.strip().unique().tolist()
     )
 
-    # Tellingen
+    # Tellingen (gefilterd op selectie)
     geel_count  = len(gecoachte_ids  & ids_bij_coach)
     blauw_count = len(coaching_ids   & ids_bij_coach)
 
-    # Metrics (gefilterd op teamcoach)
     st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
     col1, col2 = st.columns(2)
     with col1:
@@ -936,44 +938,52 @@ with coaching_tab:
 
     st.caption("---")
 
-    # Absolute totalen vanuit Excel
+    # Absolute totalen uit Excel
     st.markdown("### 📊 Totale aantallen uit Coachingslijst.xlsx")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("🟡 Totaal voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
+        st.metric("🟡 Voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
         st.metric("🟡 Unieke personen (Excel)", len(gecoachte_ids))
     with col2:
-        st.metric("🔵 Totaal lopende coachings (Excel-rijen)", totaal_lopend_rijen)
+        st.metric("🔵 Lopende coachings (Excel-rijen)", totaal_lopend_rijen)
         st.metric("🔵 Unieke personen (Excel)", len(coaching_ids))
 
     st.caption("---")
 
-    # Analyse verschil dataset ↔ Excel
+    # Vergelijking dataset ↔ Excel
     st.markdown("### 🔍 Vergelijking dataset ↔ Excel")
 
-    # Mapping: dienstnummer -> naam/teamcoach (uit dataset)
-    dn_to_info = (
+    # Mapping uit dataset (fallback voor namen/coach)
+    dn_to_info_df = (
         df.groupby("dienstnummer")[["volledige naam_disp", "teamcoach_disp"]]
           .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
           .to_dict(orient="index")
     )
 
     # Verschillen bepalen
-    missing_in_data = sorted(coaching_ids - ids_bij_coach)   # wel in Excel, niet in dataset
-    extra_in_data   = sorted(ids_bij_coach - coaching_ids)   # wel in dataset, niet in Excel
+    missing_in_data = sorted(coaching_ids - ids_bij_coach)   # in Excel maar niet in dataset
+    extra_in_data   = sorted(ids_bij_coach - coaching_ids)   # in dataset maar niet in Excel
 
     with st.expander(f"🟦 In Coachinglijst maar niet in dataset ({len(missing_in_data)})"):
         if not missing_in_data:
             st.write("—")
         else:
             for dn in missing_in_data:
-                info = dn_to_info.get(dn, {"volledige naam_disp": "onbekend", "teamcoach_disp": "onbekend"})
-                st.write(f"• {dn} — {info.get('volledige naam_disp','onbekend')} (teamcoach: {info.get('teamcoach_disp','onbekend')})")
+                ex = excel_info.get(dn, {})
+                naam_excel  = ex.get("naam")
+                coach_excel = ex.get("teamcoach")
+                # fallback naar dataset als Excel geen info had
+                dfinfo = dn_to_info_df.get(dn, {})
+                naam  = naam_excel  or dfinfo.get("volledige naam_disp", "onbekend")
+                coach = coach_excel or dfinfo.get("teamcoach_disp", "onbekend")
+                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
 
     with st.expander(f"🟥 In dataset maar niet in Coachinglijst ({len(extra_in_data)})"):
         if not extra_in_data:
             st.write("—")
         else:
             for dn in extra_in_data:
-                info = dn_to_info.get(dn, {"volledige naam_disp": "onbekend", "teamcoach_disp": "onbekend"})
-                st.write(f"• {dn} — {info.get('volledige naam_disp','onbekend')} (teamcoach: {info.get('teamcoach_disp','onbekend')})")
+                dfinfo = dn_to_info_df.get(dn, {})
+                naam  = dfinfo.get("volledige naam_disp", "onbekend")
+                coach = dfinfo.get("teamcoach_disp", "onbekend")
+                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
