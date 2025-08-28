@@ -107,11 +107,13 @@ def badge_van_status(status: str) -> str:
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     """
-    Retourneert:
-    - ids_geel, ids_blauw (sets met unieke P-nrs)
-    - total_geel_rows, total_blauw_rows (rijtellingen)
-    - excel_info: {pnr: {"naam": ..., "teamcoach": ..., "status": ...}}
-    - warn
+    Leest Coachingslijst.xlsx en retourneert:
+    - ids_geel: set met unieke P-nrs 'Voltooide coachings'
+    - ids_blauw: set met unieke P-nrs 'Coaching'
+    - total_geel_rows: totaal # rijen (incl. dubbels) in 'Voltooide coachings'
+    - total_blauw_rows: totaal # rijen (incl. dubbels) in 'Coaching'
+    - excel_info: dict[pnr] -> {'naam': 'Voornaam Achternaam', 'teamcoach': ..., 'status': ...}
+    - warn: eventuele foutmelding
     """
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
@@ -125,15 +127,16 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     def vind_sheet(xls, naam):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
 
-    # kolom-aliases
-    pnr_keys   = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
-    naam_keys  = ["naam", "volledige naam", "chauffeur", "bestuurder", "name"]
-    coach_keys = ["teamcoach", "coach", "team coach"]
+    # Aliases: let op — 'naam' behandelen we als ACHTERNAAM
+    pnr_keys        = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
+    fullname_keys   = ["volledige naam", "chauffeur", "bestuurder", "name"]   # NIET 'naam'
     voornaam_keys   = ["voornaam", "firstname", "first name", "given name"]
-    achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname"]
+    achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname", "naam"]
+    coach_keys      = ["teamcoach", "coach", "team coach"]
 
     def lees_sheet(sheetnaam, status_label):
-        ids, total_rows = set(), 0
+        ids = set()
+        total_rows = 0
         try:
             dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         except Exception:
@@ -142,10 +145,10 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         dfc.columns = dfc.columns.str.strip().str.lower()
 
         kol_pnr   = next((k for k in pnr_keys if k in dfc.columns), None)
-        kol_naam  = next((k for k in naam_keys if k in dfc.columns), None)
-        kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
+        kol_full  = next((k for k in fullname_keys if k in dfc.columns), None)
         kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
         kol_an    = next((k for k in achternaam_keys if k in dfc.columns), None)
+        kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
 
         if kol_pnr is None:
             return ids, total_rows
@@ -158,24 +161,24 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         total_rows = int(s_pnr.shape[0])
         ids = set(s_pnr.tolist())
 
-        # info per rij (laatste wint bij dubbels)
         s_pnr_reset = s_pnr.reset_index(drop=True)
         for i in range(len(s_pnr_reset)):
             pnr = s_pnr_reset.iloc[i]
             if pd.isna(pnr):
                 continue
 
-            # naam bepalen: voorkeur 1) kol_naam, anders 2) voornaam + achternaam
-            naam = None
-            if kol_naam:
-                naam = str(dfc[kol_naam].iloc[i]).strip()
-            elif kol_vn or kol_an:
-                vn = str(dfc[kol_vn].iloc[i]).strip() if kol_vn else ""
-                an = str(dfc[kol_an].iloc[i]).strip() if kol_an else ""
-                naam = f"{vn} {an}".strip()
+            # 1) Probeer Voornaam + Achternaam (waarbij 'naam' als achternaam geldt)
+            vn = str(dfc[kol_vn].iloc[i]).strip() if kol_vn else ""
+            an = str(dfc[kol_an].iloc[i]).strip() if kol_an else ""
 
-            if naam and naam.lower() in {"nan", "none", ""}:
-                naam = None
+            # 2) Als beide leeg zijn, val terug op één kolom met volledige naam (indien aanwezig)
+            if not (vn or an):
+                full = str(dfc[kol_full].iloc[i]).strip() if kol_full else ""
+                naam = full if full.lower() not in {"nan", "none", ""} else None
+            else:
+                naam = f"{vn} {an}".strip()
+                if naam.lower() in {"nan", "none", ""}:
+                    naam = None
 
             tc = str(dfc[kol_coach].iloc[i]).strip() if kol_coach else None
             if tc and tc.lower() in {"nan", "none", ""}:
