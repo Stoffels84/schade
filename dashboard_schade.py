@@ -396,12 +396,13 @@ st.write(f"🔵 Totaal lopende coachings (Excel-rijen): **{totaal_lopend_rijen}*
 
 
 
-
-
-
-chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab = st.tabs(
-    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken"]
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
+
+with coaching_tab:
+    st.subheader("🎯 Coachingsoverzicht")
+    st.info("Hier komt straks de inhoud die je wil tonen…")
 
 
 
