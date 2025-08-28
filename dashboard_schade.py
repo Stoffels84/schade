@@ -400,9 +400,6 @@ chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
     ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
 )
 
-with coaching_tab:
-    st.subheader("🎯 Coachingsoverzicht")
-    st.info("Hier komt straks de inhoud die je wil tonen…")
 
 
 
@@ -853,3 +850,22 @@ with opzoeken_tab:
                         },
                         use_container_width=True,
                     )
+
+
+
+# ========= TAB 5: Coaching =========
+with coaching_tab:
+    st.subheader("🎯 Coachingsoverzicht")
+
+    # Basisstatistieken
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Voltooide coachings (uniek)", len(gecoachte_ids))
+        st.metric("Voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
+    with col2:
+        st.metric("Lopende coachings (uniek)", len(coaching_ids))
+        st.metric("Lopende coachings (Excel-rijen)", totaal_lopend_rijen)
+
+    st.markdown("---")
+    st.info("👉 Hier kan je straks de inhoud plaatsen die je in dit tabblad wilt (bijv. lijst met chauffeurs, koppeling naar schadegevallen, grafieken, …)")
+
