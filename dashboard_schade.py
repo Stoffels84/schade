@@ -368,24 +368,23 @@ st.download_button(
 with st.sidebar:
     st.markdown("### ℹ️ Coaching-status")
 
-    # Dienstnummers die horen bij de (links) geselecteerde teamcoaches
+    # Gefilterde telling (zoals nu)
     ids_bij_coach = set(
         df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
-          .dropna()
-          .astype(str)
-          .str.extract(r"(\d+)", expand=False)  # strip eventuele niet-cijfers
-          .dropna()
-          .str.strip()
-          .unique()
-          .tolist()
+          .dropna().astype(str).str.extract(r"(\d+)", expand=False)
+          .dropna().str.strip().unique().tolist()
     )
-
-    # Snij de coachingslijsten met de selectie
     geel_count  = len(gecoachte_ids  & ids_bij_coach)
     blauw_count = len(coaching_ids   & ids_bij_coach)
 
-    st.write(f"🟡 Voltooide coachings: **{geel_count}**")
-    st.write(f"🔵 Coaching (lopend): **{blauw_count}**")
+    st.write(f"🟡 Voltooide coachings (in dataset): **{geel_count}**")
+    st.write(f"🔵 Coaching (lopend, in dataset): **{blauw_count}**")
+
+    # Absolute totalen vanuit Coachingslijst.xlsx
+    st.caption("---")
+    st.write(f"🟡 Totaal voltooide coachings (Excel): **{len(gecoachte_ids)}**")
+    st.write(f"🔵 Totaal lopende coachings (Excel): **{len(coaching_ids)}**")
+
 
 
 
