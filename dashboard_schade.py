@@ -107,17 +107,15 @@ def badge_van_status(status: str) -> str:
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     """
-    Leest Coachingslijst.xlsx en retourneert:
-    - ids_geel: set met unieke P-nrs 'Voltooide coachings'
-    - ids_blauw: set met unieke P-nrs 'Coaching'
-    - total_geel_rows: totaal # rijen (incl. dubbels) in 'Voltooide coachings'
-    - total_blauw_rows: totaal # rijen (incl. dubbels) in 'Coaching'
-    - excel_info: dict[pnr] -> {'naam': ..., 'teamcoach': ..., 'status': 'Voltooid'|'Coaching'}
-    - warn: eventuele foutmelding
+    Retourneert:
+    - ids_geel, ids_blauw (sets met unieke P-nrs)
+    - total_geel_rows, total_blauw_rows (rijtellingen)
+    - excel_info: {pnr: {"naam": ..., "teamcoach": ..., "status": ...}}
+    - warn
     """
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
-    excel_info = {}  # pnr -> {naam, teamcoach, status}
+    excel_info = {}
 
     try:
         xls = pd.ExcelFile(pad)
@@ -128,22 +126,26 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
 
     # kolom-aliases
-    pnr_keys = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
-    naam_keys = ["naam", "volledige naam", "chauffeur", "bestuurder", "name"]
+    pnr_keys   = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
+    naam_keys  = ["naam", "volledige naam", "chauffeur", "bestuurder", "name"]
     coach_keys = ["teamcoach", "coach", "team coach"]
+    voornaam_keys   = ["voornaam", "firstname", "first name", "given name"]
+    achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname"]
 
     def lees_sheet(sheetnaam, status_label):
-        ids = set()
-        total_rows = 0
+        ids, total_rows = set(), 0
         try:
             dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         except Exception:
             return ids, total_rows
 
         dfc.columns = dfc.columns.str.strip().str.lower()
+
         kol_pnr   = next((k for k in pnr_keys if k in dfc.columns), None)
         kol_naam  = next((k for k in naam_keys if k in dfc.columns), None)
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
+        kol_vn    = next((k for k in voornaam_keys if k in dfc.columns), None)
+        kol_an    = next((k for k in achternaam_keys if k in dfc.columns), None)
 
         if kol_pnr is None:
             return ids, total_rows
@@ -156,24 +158,34 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         total_rows = int(s_pnr.shape[0])
         ids = set(s_pnr.tolist())
 
-        # info per rij opslaan (laatste waarde wint als duplicaten)
-        if kol_naam or kol_coach:
-            s_pnr_reset = s_pnr.reset_index(drop=True)
-            for i in range(len(s_pnr_reset)):
-                pnr = s_pnr_reset.iloc[i]
-                if pd.isna(pnr): 
-                    continue
-                naam = str(dfc[kol_naam].iloc[i]).strip() if kol_naam else None
-                tc   = str(dfc[kol_coach].iloc[i]).strip() if kol_coach else None
-                if naam and naam.lower() in {"nan", "none", ""}: 
-                    naam = None
-                if tc and tc.lower() in {"nan", "none", ""}: 
-                    tc = None
-                info = excel_info.get(pnr, {})
-                info.update({"naam": naam or info.get("naam"),
-                             "teamcoach": tc or info.get("teamcoach"),
-                             "status": status_label})
-                excel_info[pnr] = info
+        # info per rij (laatste wint bij dubbels)
+        s_pnr_reset = s_pnr.reset_index(drop=True)
+        for i in range(len(s_pnr_reset)):
+            pnr = s_pnr_reset.iloc[i]
+            if pd.isna(pnr):
+                continue
+
+            # naam bepalen: voorkeur 1) kol_naam, anders 2) voornaam + achternaam
+            naam = None
+            if kol_naam:
+                naam = str(dfc[kol_naam].iloc[i]).strip()
+            elif kol_vn or kol_an:
+                vn = str(dfc[kol_vn].iloc[i]).strip() if kol_vn else ""
+                an = str(dfc[kol_an].iloc[i]).strip() if kol_an else ""
+                naam = f"{vn} {an}".strip()
+
+            if naam and naam.lower() in {"nan", "none", ""}:
+                naam = None
+
+            tc = str(dfc[kol_coach].iloc[i]).strip() if kol_coach else None
+            if tc and tc.lower() in {"nan", "none", ""}:
+                tc = None
+
+            info = excel_info.get(pnr, {})
+            if naam: info["naam"] = naam
+            if tc:   info["teamcoach"] = tc
+            info["status"] = status_label
+            excel_info[pnr] = info
 
         return ids, total_rows
 
@@ -186,6 +198,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         ids_blauw, total_blauw_rows = lees_sheet(s_blauw, "Coaching")
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
+
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
