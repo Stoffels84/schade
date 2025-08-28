@@ -434,4 +434,43 @@ if generate_pdf:
     elements.append(Paragraph(f"📅 Rapportdatum: {datetime.today().strftime('%d-%m-%Y')}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
-    tota
+    totaal = len(schade_pdf)
+    elements.append(Paragraph(f"📌 Totaal aantal schadegevallen: <b>{totaal}</b>", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    if not schade_pdf.empty:
+        eerste_datum = schade_pdf["Datum"].min().strftime("%d-%m-%Y")
+        laatste_datum = schade_pdf["Datum"].max().strftime("%d-%m-%Y")
+        elements.append(Paragraph("📊 Samenvatting:", styles["Heading2"]))
+        elements.append(Paragraph(f"- Periode: {eerste_datum} t/m {laatste_datum}", styles["Normal"]))
+        elements.append(Paragraph(f"- Unieke chauffeurs: {schade_pdf['volledige naam_disp'].nunique()}", styles["Normal"]))
+        elements.append(Paragraph(f"- Unieke locaties: {schade_pdf['Locatie_disp'].nunique()}", styles["Normal"]))
+        elements.append(Spacer(1, 12))
+
+    aantal_per_chauffeur = schade_pdf["volledige naam_disp"].value_counts()
+    elements.append(Paragraph("👤 Aantal schadegevallen per chauffeur:", styles["Heading2"]))
+    for nm, count in aantal_per_chauffeur.items():
+        elements.append(Paragraph(f"- {safe_name(nm)}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    aantal_per_locatie = schade_pdf["Locatie_disp"].value_counts()
+    elements.append(Paragraph("📍 Aantal schadegevallen per locatie:", styles["Heading2"]))
+    for loc, count in aantal_per_locatie.items():
+        elements.append(Paragraph(f"- {safe_name(loc)}: {count}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    chart_path = None
+    if not schade_pdf.empty:
+        schade_pdf["Maand"] = schade_pdf["Datum"].dt.to_period("M").astype(str)
+        maand_data = schade_pdf["Maand"].value_counts().sort_index()
+        fig, ax = plt.subplots()
+        maand_data.plot(kind="bar", ax=ax)
+        ax.set_title("Schadegevallen per maand")
+        ax.set_ylabel("Aantal")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".png") as tmpfile:
+            fig.savefig(tmpfile.name, dpi=150)
+            plt.close(fig)
+            chart_path = tmpfile.name
+            elements.append
