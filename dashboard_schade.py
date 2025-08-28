@@ -473,4 +473,83 @@ if generate_pdf:
             fig.savefig(tmpfile.name, dpi=150)
             plt.close(fig)
             chart_path = tmpfile.name
-            elements.append
+            elements.append(Paragraph("📊 Schadegevallen per maand:", styles["Heading2"]))
+            elements.append(Paragraph("Deze grafiek toont het aantal gemelde schadegevallen per maand voor deze teamcoach.", styles["Italic"]))
+            elements.append(Spacer(1, 6))
+            elements.append(Image(tmpfile.name, width=400, height=200))
+            elements.append(Spacer(1, 12))
+
+    # Compacte tabel met individuele schadegevallen
+    elements.append(Paragraph("📂 Individuele schadegevallen:", styles["Heading2"]))
+    elements.append(Spacer(1, 6))
+
+    kol_head = ["Datum", "Chauffeur", "Voertuig", "Locatie"]
+    heeft_link = "Link" in schade_pdf.columns
+    if heeft_link:
+        kol_head.append("Link")
+
+    tabel_data = [kol_head]
+    for _, row in schade_pdf.iterrows():
+        datum = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+        nm = row["volledige naam_disp"]; voertuig = row["BusTram_disp"]; locatie = row["Locatie_disp"]
+        rij = [datum, nm, voertuig, locatie]
+        if heeft_link:
+            link = extract_url(row.get("Link"))
+            rij.append(link if link else "-")
+        tabel_data.append(rij)
+
+    if len(tabel_data) > 1:
+        colw = [60, 150, 70, 130] + ([120] if heeft_link else [])
+        tbl = Table(tabel_data, repeatRows=1, colWidths=colw)
+        tbl.setStyle(TableStyle([
+            ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+            ("GRID", (0,0), (-1,-1), 0.5, colors.grey),
+            ("ALIGN", (0,0), (-1,0), "CENTER"),
+            ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+            ("FONTSIZE", (0,0), (-1,-1), 8),
+            ("ROWBACKGROUNDS", (0,1), (-1,-1), [colors.whitesmoke, colors.white]),
+        ]))
+        elements.append(tbl)
+
+    doc.build(elements)
+    buffer.seek(0)
+    bestandsnaam = f"schade_{pdf_coach.replace(' ', '_')}_{datetime.today().strftime('%Y%m%d')}.pdf"
+    st.sidebar.download_button(label="📥 Download PDF", data=buffer, file_name=bestandsnaam, mime="application/pdf")
+
+    if chart_path and os.path.exists(chart_path):
+        try:
+            os.remove(chart_path)
+        except Exception:
+            pass
+
+# ========= TAB 1: Chauffeur =========
+with chauffeur_tab:
+    st.subheader("📂 Schadegevallen per chauffeur")
+
+    chart_series = df_filtered["volledige naam_disp"].value_counts()
+
+    if chart_series.empty:
+        st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+    else:
+        # Dataframe voor badges en status
+        plot_df = chart_series.rename_axis("chauffeur").reset_index(name="aantal")
+        plot_df["status"] = plot_df["chauffeur"].apply(status_van_chauffeur)
+        plot_df["badge"]  = plot_df["status"].apply(badge_van_status)
+
+        # ========== KPI blok ==========
+        totaal_chauffeurs_auto = int(plot_df["chauffeur"].nunique())
+        totaal_schades = int(plot_df["aantal"].sum())
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Aantal chauffeurs (met schade)", totaal_chauffeurs_auto)
+            handmatig_aantal = st.number_input(
+                "Handmatig aantal chauffeurs",
+                min_value=1,
+                value=max(1, totaal_chauffeurs_auto),
+                step=1,
+                help="Vul hier het aantal chauffeurs in om het gemiddelde te herberekenen."
+            )
+
+        gem_handmatig = round(totaal_schades /
