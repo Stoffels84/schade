@@ -113,10 +113,11 @@ def badge_van_status(status: str) -> str:
 @st.cache_data(show_spinner=False)
 def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     ids_geel, ids_blauw = set(), set()
+    total_geel_rows, total_blauw_rows = 0, 0
     try:
         xls = pd.ExcelFile(pad)
     except Exception as e:
-        return ids_geel, ids_blauw, f"Coachingslijst niet gevonden of onleesbaar: {e}"
+        return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, f"Coachingslijst niet gevonden of onleesbaar: {e}"
 
     def vind_sheet(xls, naam):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
@@ -129,20 +130,27 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
             if k in dfc.columns:
                 kol = k; break
         if kol is None:
-            return set()
-        return set(
-            dfc[kol].astype(str).str.extract(r"(\d+)", expand=False)
-            .dropna().str.strip().tolist()
+            return set(), 0
+        s = (
+            dfc[kol].astype(str)
+            .str.extract(r"(\d+)", expand=False)
+            .dropna().str.strip()
         )
+        # rijaantal (inclusief duplicaten)
+        total_rows = int(s.shape[0])
+        # unieke P-nummers
+        return set(s.tolist()), total_rows
 
-    s_geel = vind_sheet(xls, "voltooide coachings")
+    s_geel  = vind_sheet(xls, "voltooide coachings")
     s_blauw = vind_sheet(xls, "coaching")
-    if s_geel:
-        ids_geel = haal_ids(s_geel)
-    if s_blauw:
-        ids_blauw = haal_ids(s_blauw)
 
-    return ids_geel, ids_blauw, None
+    if s_geel:
+        ids_geel,  total_geel_rows  = haal_ids(s_geel)
+    if s_blauw:
+        ids_blauw, total_blauw_rows = haal_ids(s_blauw)
+
+    return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, None
+
 
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
@@ -257,7 +265,8 @@ df["KwartaalP"]    = df["Datum"].dt.to_period("Q")
 df["Kwartaal"]     = df["KwartaalP"].astype(str)
 
 # ========= Coachingslijst =========
-gecoachte_ids, coaching_ids, coach_warn = lees_coachingslijst()
+gecoachte_ids, coaching_ids, totaal_voltooid_rijen, totaal_lopend_rijen, coach_warn = lees_coachingslijst()
+
 if coach_warn:
     st.sidebar.warning(f"⚠️ {coach_warn}")
 
@@ -381,9 +390,9 @@ with st.sidebar:
     st.write(f"🔵 Coaching (lopend, in dataset): **{blauw_count}**")
 
     # Absolute totalen vanuit Coachingslijst.xlsx
-    st.caption("---")
-    st.write(f"🟡 Totaal voltooide coachings (Excel): **{len(gecoachte_ids)}**")
-    st.write(f"🔵 Totaal lopende coachings (Excel): **{len(coaching_ids)}**")
+st.caption("---")
+st.write(f"🟡 Totaal voltooide coachings (Excel-rijen): **{totaal_voltooid_rijen}** · Unieke P-nrs: **{len(gecoachte_ids)}**")
+st.write(f"🔵 Totaal lopende coachings (Excel-rijen): **{totaal_lopend_rijen}** · Unieke P-nrs: **{len(coaching_ids)}**")
 
 
 
