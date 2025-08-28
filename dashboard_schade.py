@@ -825,11 +825,12 @@ with opzoeken_tab:
                         use_container_width=True,
                     )
 
+
 # ========= TAB 5: Coaching =========
 with coaching_tab:
     st.subheader("🎯 Coachingsoverzicht")
 
-    # ids uit dataset (op basis van geselecteerde teamcoach(es))
+    # ids uit schadelijst (op basis van geselecteerde teamcoach(es))
     ids_bij_coach = set(
         df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
           .dropna().astype(str).str.extract(r"(\d+)", expand=False)
@@ -843,9 +844,9 @@ with coaching_tab:
     st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
     col1, col2 = st.columns(2)
     with col1:
-        st.metric("🟡 Voltooide coachings (in dataset)", geel_count)
+        st.metric("🟡 Voltooide coachings (in schadelijst)", geel_count)
     with col2:
-        st.metric("🔵 Coaching (lopend, in dataset)", blauw_count)
+        st.metric("🔵 Coaching (lopend, in schadelijst)", blauw_count)
 
     st.caption("---")
 
@@ -861,10 +862,10 @@ with coaching_tab:
 
     st.caption("---")
 
-    # Vergelijking dataset ↔ Excel
-    st.markdown("### 🔍 Vergelijking dataset ↔ Excel")
+    # Vergelijking schadelijst ↔ Excel
+    st.markdown("### 🔍 Vergelijking schadelijst ↔ Excel")
 
-    # Mapping uit dataset (fallback voor namen/coach)
+    # Mapping uit schadelijst (fallback voor namen/coach)
     dn_to_info_df = (
         df.groupby("dienstnummer")[["volledige naam_disp", "teamcoach_disp"]]
           .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
@@ -872,10 +873,10 @@ with coaching_tab:
     )
 
     # Verschillen bepalen
-    missing_in_data = sorted(coaching_ids - ids_bij_coach)   # in Excel maar niet in dataset
-    extra_in_data   = sorted(ids_bij_coach - coaching_ids)   # in dataset maar niet in Excel
+    missing_in_data = sorted(coaching_ids - ids_bij_coach)   # in Excel maar niet in schadelijst
+    extra_in_data   = sorted(ids_bij_coach - coaching_ids)   # in schadelijst maar niet in Excel
 
-    with st.expander(f"🟦 In Coachinglijst maar niet in dataset ({len(missing_in_data)})"):
+    with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(missing_in_data)})"):
         if not missing_in_data:
             st.write("—")
         else:
@@ -883,13 +884,13 @@ with coaching_tab:
                 ex = excel_info.get(dn, {})
                 naam_excel  = ex.get("naam")
                 coach_excel = ex.get("teamcoach")
-                # fallback naar dataset als Excel geen info had
+                # fallback naar schadelijst als Excel geen info had
                 dfinfo = dn_to_info_df.get(dn, {})
                 naam  = naam_excel  or dfinfo.get("volledige naam_disp", "onbekend")
                 coach = coach_excel or dfinfo.get("teamcoach_disp", "onbekend")
                 st.write(f"• {dn} — {naam} (teamcoach: {coach})")
 
-    with st.expander(f"🟥 In dataset maar niet in Coachinglijst ({len(extra_in_data)})"):
+    with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(extra_in_data)})"):
         if not extra_in_data:
             st.write("—")
         else:
@@ -898,3 +899,5 @@ with coaching_tab:
                 naam  = dfinfo.get("volledige naam_disp", "onbekend")
                 coach = dfinfo.get("teamcoach_disp", "onbekend")
                 st.write(f"• {dn} — {naam} (teamcoach: {coach})")
+
+
