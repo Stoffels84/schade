@@ -644,4 +644,49 @@ with voertuig_tab:
         )
         start_m = df_per_maand["JaarMaandP"].min()
         eind_m  = df_per_maand["JaarMaandP"].max()
-        alle_maanden = pd.period_range(start=start_m, end=eind_m, freq="M").astype(str
+        alle_maanden = pd.period_range(start=start_m, end=eind_m, freq="M").astype(str)
+        groep = groep.reindex(alle_maanden, fill_value=0)
+
+        fig2, ax2 = plt.subplots(figsize=(10, 4))
+        groep.plot(ax=ax2, marker="o")
+        ax2.set_xlabel("Jaar-Maand")
+        ax2.set_ylabel("Aantal schadegevallen")
+        ax2.set_title("Schadegevallen per maand per voertuigtype (YYYY-MM)")
+        ax2.legend(title="Voertuig")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig2)
+
+    # --- Deel 2: Aantal schadegevallen per type voertuig ---
+    st.subheader("Aantal schadegevallen per type voertuig")
+
+    voertuig_col = "BusTram_disp" if "BusTram_disp" in df_filtered.columns else (
+        "Bus/ Tram" if "Bus/ Tram" in df_filtered.columns else None
+    )
+    if voertuig_col is None:
+        st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+    else:
+        chart_data = df_filtered[voertuig_col].value_counts()
+
+        if chart_data.empty:
+            st.warning("⚠️ Geen schadegevallen gevonden voor de geselecteerde filters.")
+        else:
+            fig, ax = plt.subplots(figsize=(8, max(1.5, len(chart_data) * 0.3 + 1)))
+            chart_data.sort_values().plot(kind="barh", ax=ax)
+            ax.set_xlabel("Aantal schadegevallen")
+            ax.set_ylabel("Voertuigtype")
+            ax.set_title("Schadegevallen per type voertuig")
+            st.pyplot(fig)
+
+            st.subheader("📂 Schadegevallen per voertuigtype")
+
+            for voertuig in chart_data.sort_values(ascending=False).index.tolist():
+                kol_list = ["Datum", "volledige naam_disp"]
+                if voertuig_col not in kol_list:
+                    kol_list.append(voertuig_col)
+                if "Link" in df_filtered.columns:
+                    kol_list.append("Link")
+                if "teamcoach_disp" in df_filtered.columns:
+                    kol_list.append("teamcoach_disp")
+                if "Locatie_disp" in df_filtered.columns:
+                    kol_list.a_
