@@ -741,3 +741,48 @@ with locatie_tab:
             for locatie in chart_data.sort_values(ascending=False).index.tolist():
                 kol_list = ["Datum", "volledige naam_disp", "BusTram_disp", "teamcoach_disp"]
                 if "Link" in df_filtered.columns:
+                    kol_list.append("Link")
+                aanwezige_kol = [k for k in kol_list if k in df_filtered.columns]
+                schade_per_locatie = (
+                    df_filtered.loc[df_filtered[locatie_col] == locatie, aanwezige_kol]
+                    .sort_values(by="Datum")
+                )
+                aantal = len(schade_per_locatie)
+
+                with st.expander(f"{locatie} — {aantal} schadegevallen"):
+                    if schade_per_locatie.empty:
+                        st.caption("Geen rijen binnen de huidige filters.")
+                    else:
+                        for _, row in schade_per_locatie.iterrows():
+                            datum_obj = row.get("Datum")
+                            datum_str = datum_obj.strftime("%d-%m-%Y") if pd.notna(datum_obj) else "onbekend"
+                            chauffeur = row.get("volledige naam_disp", "onbekend")
+                            voertuig  = row.get("BusTram_disp", "onbekend")
+                            coach     = row.get("teamcoach_disp", "onbekend")
+                            link = extract_url(row.get("Link")) if "Link" in schade_per_locatie.columns else None
+
+                            prefix = f"📅 {datum_str} — 👤 {chauffeur} — 🚌 {voertuig} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige of aanwezige link")
+
+# ========= TAB 4: Opzoeken =========
+with opzoeken_tab:
+    st.subheader("🔎 Opzoeken op personeelsnummer")
+
+    zoek = st.text_input("Personeelsnummer (dienstnummer)", placeholder="bv. 41092")
+
+    dn_in = re.findall(r"\d+", str(zoek))
+    dn_in = dn_in[0] if dn_in else ""
+
+    if not dn_in:
+        st.info("Geef een personeelsnummer in om resultaten te zien.")
+    else:
+        if "dienstnummer" not in df.columns:
+            st.error("Kolom 'dienstnummer' ontbreekt in de data.")
+        else:
+            res = df[df["dienstnummer"].astype(str).str.strip() == dn_in].copy()
+
+            if res.empty:
+                st.warning(f"Geen resul
