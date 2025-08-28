@@ -866,53 +866,6 @@ with opzoeken_tab:
 
 
 
-# ========= TAB 5: Coaching =========
-with coaching_tab:
-    st.subheader("🎯 Coachingsoverzicht")
-
-    # ids uit dataset op basis van gekozen teamcoach(es)
-    ids_bij_coach = set(
-        df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
-          .dropna().astype(str).str.extract(r"(\d+)", expand=False)
-          .dropna().str.strip().unique().tolist()
-    )
-
-    # Tellingen
-    geel_count  = len(gecoachte_ids  & ids_bij_coach)
-    blauw_count = len(coaching_ids   & ids_bij_coach)
-
-    # Metrics (gefilterd op teamcoach)
-    st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("🟡 Voltooide coachings (in dataset)", geel_count)
-    with col2:
-        st.metric("🔵 Coaching (lopend, in dataset)", blauw_count)
-
-    st.caption("---")
-
-    # Absolute totalen vanuit Excel
-    st.markdown("### 📊 Totale aantallen uit Coachingslijst.xlsx")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("🟡 Totaal voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
-        st.metric("🟡 Unieke personen (Excel)", len(gecoachte_ids))
-    with col2:
-        st.metric("🔵 Totaal lopende coachings (Excel-rijen)", totaal_lopend_rijen)
-        st.metric("🔵 Unieke personen (Excel)", len(coaching_ids))
-
-    st.caption("---")
-
-    # Analyse verschil dataset ↔ Excel
-    st.markdown("### 🔍 Vergelijking dataset ↔ Excel")
-
-    # Mapping: dienstnummer -> naam/teamcoach (uit dataset)
-   chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
-    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
-)
-
-
-
 
 # ========= TAB 5: Coaching =========
 with coaching_tab:
