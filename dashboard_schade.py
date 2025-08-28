@@ -203,6 +203,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
 
 
+
 # ========= Gebruikersbestand (login) =========
 gebruikers_df = load_excel("chauffeurs.xlsx")
 gebruikers_df.columns = gebruikers_df.columns.str.strip().str.lower()
