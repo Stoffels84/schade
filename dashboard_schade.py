@@ -847,27 +847,37 @@ with opzoeken_tab:
 with coaching_tab:
     st.subheader("🎯 Coachingsoverzicht")
 
-    # ids uit schadelijst (op basis van geselecteerde teamcoach(es))
-    ids_bij_coach = set(
-        df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
-          .dropna().astype(str).str.extract(r"(\d+)", expand=False)
+    # -- Helpers
+    def _norm(x):
+        return str(x).strip().casefold() if pd.notna(x) else ""
+
+    # Geselecteerde teamcoaches (uit de linker filterbalk)
+    selected_norms = {_norm(tc) for tc in selected_teamcoaches}
+    gekozen_label = ", ".join(selected_teamcoaches) if selected_teamcoaches else "—"
+
+    # ids uit SCHADELIJST (voor de geselecteerde coach(es))
+    ids_schade_sel = set(
+        df.loc[df["teamcoach_disp"].apply(lambda s: _norm(s) in selected_norms), "dienstnummer"]
+          .dropna().astype(str)
+          .str.extract(r"(\d+)", expand=False)
           .dropna().str.strip().unique().tolist()
     )
 
-    # Tellingen (gefilterd op selectie)
-    geel_count  = len(gecoachte_ids  & ids_bij_coach)
-    blauw_count = len(coaching_ids   & ids_bij_coach)
+    # Tellingen in schadelijst per status (gefilterd op gekozen coach(es))
+    geel_count  = len(gecoachte_ids  & ids_schade_sel)
+    blauw_count = len(coaching_ids   & ids_schade_sel)
 
-    st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
+    st.markdown("### ℹ️ Coaching-status (gefilterd op teamcoach-selectie)")
     col1, col2 = st.columns(2)
     with col1:
         st.metric("🟡 Voltooide coachings (in schadelijst)", geel_count)
     with col2:
         st.metric("🔵 Coaching (lopend, in schadelijst)", blauw_count)
+    st.caption(f"Gekozen teamcoach(es): {gekozen_label}")
 
     st.caption("---")
 
-    # Absolute totalen uit Excel
+    # Absolute totalen uit Excel (alle rijen / unieke personen)
     st.markdown("### 📊 Totale aantallen uit Coachingslijst.xlsx")
     col1, col2 = st.columns(2)
     with col1:
@@ -879,70 +889,47 @@ with coaching_tab:
 
     st.caption("---")
 
-    # Vergelijking schadelijst ↔ Excel
-  # ========= binnen: with coaching_tab: =========
-st.markdown("### 🔍 Vergelijking schadelijst ↔ Excel")
+    # ========== Vergelijking schadelijst ↔ Excel ==========
+    st.markdown("### 🔍 Vergelijking schadelijst ↔ Excel (lopende coachings)")
 
-# Mapping uit schadelijst (fallback voor namen)
-dn_to_info_df = (
-    df.groupby("dienstnummer")[["volledige naam_disp", "teamcoach_disp"]]
-      .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
-      .to_dict(orient="index")
-)
-
-# 1) Kies teamcoach voor de vergelijking (los van de sidebarfilters)
-coach_keuze = st.selectbox(
-    "Kies teamcoach voor vergelijking",
-    options=["— kies teamcoach —"] + teamcoach_options,
-    index=0,
-    key="cmp_coach"
-)
-
-def _norm(x):
-    return str(x).strip().casefold() if pd.notna(x) else ""
-
-if coach_keuze == "— kies teamcoach —":
-    st.info("Kies eerst een teamcoach om de twee lijstjes te zien.")
-else:
-    coach_norm = _norm(coach_keuze)
-
-    # 2) IDs in schadelijst voor deze teamcoach
-    ids_schade_coach = set(
-        df.loc[df["teamcoach_disp"].apply(_norm) == coach_norm, "dienstnummer"]
-          .dropna().astype(str)
-          .str.extract(r"(\d+)", expand=False)
-          .dropna().str.strip().unique().tolist()
+    # Mapping uit schadelijst (fallback voor naam/coach)
+    dn_to_info_df = (
+        df.groupby("dienstnummer")[["volledige naam_disp", "teamcoach_disp"]]
+          .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
+          .to_dict(orient="index")
     )
 
-    # 3) IDs in Excel (lopend) voor deze teamcoach (gebruik excel_info['teamcoach'])
-    ids_excel_coach = set(
+    # IDs in Excel (LOPEND) voor de geselecteerde coach(es)
+    # (Wil je 'Voltooid' of 'Beide'? vervang 'coaching_ids' door gecoachte_ids resp. coaching_ids | gecoachte_ids)
+    ids_excel_sel = {
         pnr for pnr in coaching_ids
-        if _norm(excel_info.get(pnr, {}).get("teamcoach")) == coach_norm
-    )
+        if _norm(excel_info.get(pnr, {}).get("teamcoach")) in selected_norms
+    }
 
-    # 4) Verschillen
-    missing_in_schade = sorted(ids_excel_coach - ids_schade_coach)  # wel in Excel voor coach, niet in schadelijst voor coach
-    extra_in_schade   = sorted(ids_schade_coach - ids_excel_coach)  # wel in schadelijst voor coach, niet in Excel voor coach
+    # Verschillen
+    missing_in_schade = sorted(ids_excel_sel - ids_schade_sel)  # wel in Excel, niet in schadelijst
+    extra_in_schade   = sorted(ids_schade_sel - ids_excel_sel)  # wel in schadelijst, niet in Excel
 
-    # 5) Lijstjes tonen
-    with st.expander(f"🟦 In Coachinglijst (coach: {coach_keuze}) maar niet in schadelijst ({len(missing_in_schade)})", expanded=False):
+    with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(missing_in_schade)})", expanded=False):
         if not missing_in_schade:
             st.write("—")
         else:
             for dn in missing_in_schade:
                 ex = excel_info.get(dn, {})
                 naam_excel  = ex.get("naam")
-                coach_excel = ex.get("teamcoach") or coach_keuze
-                # Fallback naar schadelijst-naam als Excel geen naam heeft
+                coach_excel = ex.get("teamcoach")
+                # fallback naar schadelijst als Excel geen naam/coach heeft
                 dfinfo = dn_to_info_df.get(dn, {})
-                naam  = naam_excel or dfinfo.get("volledige naam_disp", "onbekend")
-                st.write(f"• {dn} — {naam} (teamcoach: {coach_excel})")
+                naam  = naam_excel  or dfinfo.get("volledige naam_disp", "onbekend")
+                coach = coach_excel or dfinfo.get("teamcoach_disp", "onbekend")
+                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
 
-    with st.expander(f"🟥 In schadelijst (coach: {coach_keuze}) maar niet in Coachinglijst ({len(extra_in_schade)})", expanded=False):
+    with st.expander(f"🟥 In schadelijst maar niet in Coachinglijst ({len(extra_in_schade)})", expanded=False):
         if not extra_in_schade:
             st.write("—")
         else:
             for dn in extra_in_schade:
                 dfinfo = dn_to_info_df.get(dn, {})
                 naam  = dfinfo.get("volledige naam_disp", "onbekend")
-                st.write(f"• {dn} — {naam} (teamcoach: {coach_keuze})")
+                coach = dfinfo.get("teamcoach_disp", "onbekend")
+                st.write(f"• {dn} — {naam} (teamcoach: {coach})")
