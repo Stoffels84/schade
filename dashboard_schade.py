@@ -894,7 +894,7 @@ with coaching_tab:
 
     # Statuskeuze voor de VERGELIJKING
     status_keuze = st.radio(
-        "Welke status uit Excel vergelijken?",
+        "Welke status uit coachingslijst vergelijken?",
         ["Lopend", "Voltooid", "Beide"],
         horizontal=True,
         key="cmp_status"
