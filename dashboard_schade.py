@@ -890,7 +890,21 @@ with coaching_tab:
     st.caption("---")
 
     # ========== Vergelijking schadelijst ↔ Excel ==========
-    st.markdown("### 🔍 Vergelijking schadelijst ↔ Excel (lopende coachings)")
+    st.markdown("### 🔍 Vergelijking schadelijst ↔ Excel")
+
+    # Statuskeuze voor de VERGELIJKING
+    status_keuze = st.radio(
+        "Welke status uit Excel vergelijken?",
+        ["Lopend", "Voltooid", "Beide"],
+        horizontal=True,
+        key="cmp_status"
+    )
+    if status_keuze == "Lopend":
+        bron_ids = coaching_ids                      # uit sheet "Coaching"
+    elif status_keuze == "Voltooid":
+        bron_ids = gecoachte_ids                     # uit sheet "Voltooide coachings"
+    else:
+        bron_ids = coaching_ids | gecoachte_ids      # beide sheets
 
     # Mapping uit schadelijst (fallback voor naam/coach)
     dn_to_info_df = (
@@ -899,16 +913,17 @@ with coaching_tab:
           .to_dict(orient="index")
     )
 
-    # IDs in Excel (LOPEND) voor de geselecteerde coach(es)
-    # (Wil je 'Voltooid' of 'Beide'? vervang 'coaching_ids' door gecoachte_ids resp. coaching_ids | gecoachte_ids)
+    # IDs in Excel voor de geselecteerde coach(es) en gekozen status(sen)
     ids_excel_sel = {
-        pnr for pnr in coaching_ids
+        pnr for pnr in bron_ids
         if _norm(excel_info.get(pnr, {}).get("teamcoach")) in selected_norms
     }
 
     # Verschillen
     missing_in_schade = sorted(ids_excel_sel - ids_schade_sel)  # wel in Excel, niet in schadelijst
     extra_in_schade   = sorted(ids_schade_sel - ids_excel_sel)  # wel in schadelijst, niet in Excel
+
+    st.caption(f"Vergelijking voor status: {status_keuze} · Teamcoach(es): {gekozen_label}")
 
     with st.expander(f"🟦 In Coachinglijst maar niet in schadelijst ({len(missing_in_schade)})", expanded=False):
         if not missing_in_schade:
@@ -933,3 +948,4 @@ with coaching_tab:
                 naam  = dfinfo.get("volledige naam_disp", "onbekend")
                 coach = dfinfo.get("teamcoach_disp", "onbekend")
                 st.write(f"• {dn} — {naam} (teamcoach: {coach})")
+
