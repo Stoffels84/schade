@@ -603,3 +603,45 @@ with chauffeur_tab:
                         )
                         for _, row in schade_chauffeur.iterrows():
                             datum_str = row["Datum"].strftime("%d-%m-%Y") if pd.notna(row["Datum"]) else "onbekend"
+                            voertuig  = row["BusTram_disp"]
+                            loc       = row["Locatie_disp"]
+                            coach     = row["teamcoach_disp"]
+                            link      = extract_url(row.get("Link")) if "Link" in cols else None
+                            prefix = f"📅 {datum_str} — 🚌 {voertuig} — 📍 {loc} — 🧑‍💼 {coach} — "
+                            if isinstance(link, str) and link:
+                                st.markdown(prefix + f"[🔗 Link]({link})", unsafe_allow_html=True)
+                            else:
+                                st.markdown(prefix + "❌ Geen geldige link")
+
+# ========= TAB 2: Voertuig =========
+with voertuig_tab:
+    # --- Deel 1: Lijngrafiek per maand (nu met JAAR-MAAND) ---
+    st.subheader("📈 Schadegevallen per maand per voertuigtype")
+
+    df_per_maand = df_filtered.copy()
+    if "Datum" in df_per_maand.columns:
+        df_per_maand = df_per_maand[df_per_maand["Datum"].notna()].copy()
+    else:
+        df_per_maand["Datum"] = pd.NaT
+
+    voertuig_col = (
+        "BusTram_disp"
+        if "BusTram_disp" in df_per_maand.columns
+        else ("Bus/ Tram" if "Bus/ Tram" in df_per_maand.columns else None)
+    )
+
+    if voertuig_col is None:
+        st.warning("⚠️ Kolom voor voertuigtype niet gevonden.")
+    elif df_per_maand.empty or not df_per_maand["Datum"].notna().any():
+        st.info("ℹ️ Geen geldige datums binnen de huidige filters om een maandoverzicht te tonen.")
+    else:
+        df_per_maand["JaarMaandP"] = df_per_maand["Datum"].dt.to_period("M")
+        df_per_maand["JaarMaand"]  = df_per_maand["JaarMaandP"].astype(str)
+        groep = (
+            df_per_maand.groupby(["JaarMaand", voertuig_col])
+            .size()
+            .unstack(fill_value=0)
+        )
+        start_m = df_per_maand["JaarMaandP"].min()
+        eind_m  = df_per_maand["JaarMaandP"].max()
+        alle_maanden = pd.period_range(start=start_m, end=eind_m, freq="M").astype(str
