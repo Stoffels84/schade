@@ -110,46 +110,77 @@ def badge_van_status(status: str) -> str:
     return {"Voltooid": "🟡 ", "Coaching": "🔵 ", "Beide": "🟡🔵 ", "Geen": ""}.get(status, "")
 
 # ========= Coachingslijst inlezen (Voltooid/Coaching) =========
-@st.cache_data(show_spinner=False)
-def lees_coachingslijst(pad="Coachingslijst.xlsx"):
-    ids_geel, ids_blauw = set(), set()
-    total_geel_rows, total_blauw_rows = 0, 0
-    try:
-        xls = pd.ExcelFile(pad)
-    except Exception as e:
-        return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, f"Coachingslijst niet gevonden of onleesbaar: {e}"
+chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+)
 
-    def vind_sheet(xls, naam):
-        return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
+# ========= TAB 5: Coaching =========
+with coaching_tab:
+    st.subheader("🎯 Coachingsoverzicht")
 
-    def haal_ids(sheetnaam):
-        dfc = pd.read_excel(xls, sheet_name=sheetnaam)
-        dfc.columns = dfc.columns.str.strip().str.lower()
-        kol = None
-        for k in ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]:
-            if k in dfc.columns:
-                kol = k; break
-        if kol is None:
-            return set(), 0
-        s = (
-            dfc[kol].astype(str)
-            .str.extract(r"(\d+)", expand=False)
-            .dropna().str.strip()
-        )
-        # rijaantal (inclusief duplicaten)
-        total_rows = int(s.shape[0])
-        # unieke P-nummers
-        return set(s.tolist()), total_rows
+    # ids uit dataset op basis van gekozen teamcoach(es)
+    ids_bij_coach = set(
+        df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
+          .dropna().astype(str).str.extract(r"(\d+)", expand=False)
+          .dropna().str.strip().unique().tolist()
+    )
 
-    s_geel  = vind_sheet(xls, "voltooide coachings")
-    s_blauw = vind_sheet(xls, "coaching")
+    # Tellingen
+    geel_count  = len(gecoachte_ids  & ids_bij_coach)
+    blauw_count = len(coaching_ids   & ids_bij_coach)
 
-    if s_geel:
-        ids_geel,  total_geel_rows  = haal_ids(s_geel)
-    if s_blauw:
-        ids_blauw, total_blauw_rows = haal_ids(s_blauw)
+    # Metrics (gefilterd op teamcoach)
+    st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🟡 Voltooide coachings (in dataset)", geel_count)
+    with col2:
+        st.metric("🔵 Coaching (lopend, in dataset)", blauw_count)
 
-    return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, None
+    st.caption("---")
+
+    # Absolute totalen vanuit Excel
+    st.markdown("### 📊 Totale aantallen uit Coachingslijst.xlsx")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🟡 Totaal voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
+        st.metric("🟡 Unieke personen (Excel)", len(gecoachte_ids))
+    with col2:
+        st.metric("🔵 Totaal lopende coachings (Excel-rijen)", totaal_lopend_rijen)
+        st.metric("🔵 Unieke personen (Excel)", len(coaching_ids))
+
+    st.caption("---")
+
+    # Analyse verschil dataset ↔ Excel
+    st.markdown("### 🔍 Vergelijking dataset ↔ Excel")
+
+    # Mapping: dienstnummer -> naam/teamcoach (uit dataset)
+    dn_to_info = (
+        df.groupby("dienstnummer")[["volledige naam_disp", "teamcoach_disp"]]
+          .agg(lambda s: s.mode().iat[0] if not s.mode().empty else s.iloc[0])
+          .to_dict(orient="index")
+    )
+
+    # Verschillen bepalen
+    missing_in_data = sorted(coaching_ids - ids_bij_coach)   # wel in Excel, niet in dataset
+    extra_in_data   = sorted(ids_bij_coach - coaching_ids)   # wel in dataset, niet in Excel
+
+    with st.expander(f"🟦 In Coachinglijst maar niet in dataset ({len(missing_in_data)})"):
+        if not missing_in_data:
+            st.write("—")
+        else:
+            for dn in missing_in_data:
+                info = dn_to_info.get(dn, {"volledige naam_disp": "onbekend", "teamcoach_disp": "onbekend"})
+                st.write(f"• {dn} — {info.get('volledige naam_disp','onbekend')} (teamcoach: {info.get('teamcoach_disp','onbekend')})")
+
+    with st.expander(f"🟥 In dataset maar niet in Coachinglijst ({len(extra_in_data)})"):
+        if not extra_in_data:
+            st.write("—")
+        else:
+            for dn in extra_in_data:
+                info = dn_to_info.get(dn, {"volledige naam_disp": "onbekend", "teamcoach_disp": "onbekend"})
+                st.write(f"• {dn} — {info.get('volledige naam_disp','onbekend')} (teamcoach: {info.get('teamcoach_disp','onbekend')})")
+
 
 
 # ========= Gebruikersbestand (login) =========
@@ -834,6 +865,51 @@ with opzoeken_tab:
 
 
 
+
+# ========= TAB 5: Coaching =========
+with coaching_tab:
+    st.subheader("🎯 Coachingsoverzicht")
+
+    # ids uit dataset op basis van gekozen teamcoach(es)
+    ids_bij_coach = set(
+        df.loc[df["teamcoach_disp"].isin(selected_teamcoaches), "dienstnummer"]
+          .dropna().astype(str).str.extract(r"(\d+)", expand=False)
+          .dropna().str.strip().unique().tolist()
+    )
+
+    # Tellingen
+    geel_count  = len(gecoachte_ids  & ids_bij_coach)
+    blauw_count = len(coaching_ids   & ids_bij_coach)
+
+    # Metrics (gefilterd op teamcoach)
+    st.markdown("### ℹ️ Coaching-status (gefilterd op selectie)")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🟡 Voltooide coachings (in dataset)", geel_count)
+    with col2:
+        st.metric("🔵 Coaching (lopend, in dataset)", blauw_count)
+
+    st.caption("---")
+
+    # Absolute totalen vanuit Excel
+    st.markdown("### 📊 Totale aantallen uit Coachingslijst.xlsx")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("🟡 Totaal voltooide coachings (Excel-rijen)", totaal_voltooid_rijen)
+        st.metric("🟡 Unieke personen (Excel)", len(gecoachte_ids))
+    with col2:
+        st.metric("🔵 Totaal lopende coachings (Excel-rijen)", totaal_lopend_rijen)
+        st.metric("🔵 Unieke personen (Excel)", len(coaching_ids))
+
+    st.caption("---")
+
+    # Analyse verschil dataset ↔ Excel
+    st.markdown("### 🔍 Vergelijking dataset ↔ Excel")
+
+    # Mapping: dienstnummer -> naam/teamcoach (uit dataset)
+   chauffeur_tab, voertuig_tab, locatie_tab, opzoeken_tab, coaching_tab = st.tabs(
+    ["👤 Chauffeur", "🚌 Voertuig", "📍 Locatie", "🔎 Opzoeken", "🎯 Coaching"]
+)
 
 # ========= TAB 5: Coaching =========
 with coaching_tab:
