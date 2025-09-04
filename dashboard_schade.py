@@ -1177,7 +1177,7 @@ def run_dashboard():
                 pd.DataFrame(columns=["Dienstnr","Naam","Schades","Status (coachinglijst)"])
             )
 
-            with st.expander(f"🟥 > {thr} schades en niet in coaching/voltooid ({len(result_set)})", expanded=True):
+            with st.expander(f"🟥 > {thr} schades en niet gepland in coaching ({len(result_set)})", expanded=True):
                 if df_no_coach.empty:
                     st.caption("Geen resultaten.")
                     st.caption(f"PNR's >{thr} vóór uitsluiting: {len(pnrs_meer_dan)}")
