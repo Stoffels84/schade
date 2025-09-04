@@ -1147,7 +1147,7 @@ def run_dashboard():
                     )
 
             st.markdown("---")
-            st.markdown("## 🚩 schades en niet in *Coaching* of *Voltooid*")
+            st.markdown("## 🚩 schades en niet gepland voor coaching")
             gebruik_filters_s = st.checkbox(
                 "Tel schades binnen huidige filters (uit = volledige dataset)",
                 value=False,
