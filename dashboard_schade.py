@@ -538,8 +538,17 @@ def run_dashboard():
             st.rerun()
 
     # Data laden
+    # Data laden
     df, options = load_schade_prepared()
-    gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst()
+    
+    # ▼ Nieuw: bestands-signatuur als cache-sleutel
+    coachings_pad = "Coachingslijst.xlsx"
+    sig = file_sig(coachings_pad)  # gebruikt grootte, mtime en sha256-inhoud
+    
+    gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst(
+        pad=coachings_pad,
+        _v=sig
+    )
     st.session_state["gecoachte_ids"] = gecoachte_ids    # nieuw: voltooide set bewaren
     st.session_state["coaching_ids"]  = coaching_ids
     st.session_state["excel_info"]    = excel_info
