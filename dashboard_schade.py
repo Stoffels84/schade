@@ -12,6 +12,28 @@ from datetime import datetime
 import streamlit as st
 import pandas as pd
 
+def file_sig(path: str) -> str | None:
+    """
+    Geef een stabiele signatuur voor het bestand (size + mtime + sha256).
+    Resultaat verandert zodra het bestand echt wijzigt.
+    """
+    if not os.path.exists(path):
+        return None
+    try:
+        st_ = os.stat(path)
+        size = st_.st_size
+        mtime = int(st_.st_mtime)
+        import hashlib
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        # korte, leesbare signatuur teruggeven
+        return f"{size}-{mtime}-{h.hexdigest()[:16]}"
+    except Exception:
+        return None
+
+
 # =========================
 # .env / mail.env laden
 # =========================
@@ -263,11 +285,12 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON"):
 
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
-def lees_coachingslijst(pad="Coachingslijst.xlsx"):
+def lees_coachingslijst(pad="Coachingslijst.xlsx", _v=None):
     ids_geel, ids_blauw = set(), set()
     total_geel_rows, total_blauw_rows = 0, 0
     excel_info = {}
-    df_voltooide_clean = None  # <— nieuw
+    df_compact_all = []  # <— verzamel beide sheets
+
     try:
         xls = pd.ExcelFile(pad)
     except Exception as e:
@@ -276,25 +299,26 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
     def vind_sheet(xls, naam):
         return next((s for s in xls.sheet_names if s.strip().lower() == naam), None)
 
+    # keys …
     pnr_keys        = ["p-nr", "p_nr", "pnr", "pnummer", "dienstnummer", "p nr"]
     fullname_keys   = ["volledige naam", "chauffeur", "bestuurder", "name"]
     voornaam_keys   = ["voornaam", "firstname", "first name", "given name"]
     achternaam_keys = ["achternaam", "familienaam", "lastname", "last name", "surname", "naam"]
     coach_keys      = ["teamcoach", "coach", "team coach"]
     rating_keys     = ["beoordeling coaching", "beoordeling", "rating", "evaluatie"]
-    # nieuw: mogelijke datumkolommen
     date_hints      = ["datum coaching", "datumcoaching", "coaching datum", "datum"]
 
     def lees_sheet(sheetnaam, status_label):
         ids = set()
         total_rows = 0
+        df_small = None
+
         try:
             dfc = pd.read_excel(xls, sheet_name=sheetnaam)
         except Exception:
             return ids, total_rows, None
 
         dfc.columns = dfc.columns.str.strip().str.lower()
-        cols_lower = {c.lower().strip(): c for c in dfc.columns}
 
         kol_pnr   = next((k for k in pnr_keys if k in dfc.columns), None)
         kol_full  = next((k for k in fullname_keys if k in dfc.columns), None)
@@ -303,13 +327,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         kol_coach = next((k for k in coach_keys if k in dfc.columns), None)
         kol_rate  = next((k for k in rating_keys if k in dfc.columns), None)
 
-        # nieuw: datumkolom zoeken
-        kol_date = None
-        for hint in date_hints:
-            if hint in dfc.columns:
-                kol_date = hint
-                break
-        # fallback: kolom die zowel 'datum' als 'coach' bevat
+        kol_date = next((h for h in date_hints if h in dfc.columns), None)
         if not kol_date:
             for k in dfc.columns:
                 if ("datum" in k) and ("coach" in k):
@@ -319,7 +337,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         if kol_pnr is None:
             return ids, total_rows, None
 
-        # strings voor pnr
+        # ids verzamelen
         s_pnr = (
             dfc[kol_pnr].astype(str)
             .str.extract(r"(\d+)", expand=False)
@@ -328,7 +346,7 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
         total_rows = int(s_pnr.shape[0])
         ids = set(s_pnr.tolist())
 
-        # loop en vul excel_info
+        # excel_info vullen (naam/coach/status/beoordeling/datums)
         s_pnr_reset = s_pnr.reset_index(drop=True)
         for i in range(len(s_pnr_reset)):
             pnr = s_pnr_reset.iloc[i]
@@ -354,90 +372,90 @@ def lees_coachingslijst(pad="Coachingslijst.xlsx"):
 
             if kol_rate and status_label == "Voltooid":
                 raw_rate = str(dfc[kol_rate].iloc[i]).strip().lower()
-                if raw_rate and raw_rate not in {"nan", "none", ""}:
-                    mapping = {
-                        "zeer goed": "zeer goed",
-                        "goed": "goed",
-                        "voldoende": "voldoende",
-                        "slecht": "slecht",
-                        "zeer slecht": "zeer slecht",
-                        "zeergoed": "zeer goed",
-                        "zeerslecht": "zeer slecht",
-                    }
+                mapping = {
+                    "zeer goed": "zeer goed", "goed": "goed", "voldoende": "voldoende",
+                    "onvoldoende": "onvoldoende", "slecht": "slecht", "zeer slecht": "zeer slecht",
+                    "zeergoed": "zeer goed", "zeerslecht": "zeer slecht",
+                }
+                if raw_rate and raw_rate not in {"nan","none",""}:
                     info["beoordeling"] = mapping.get(raw_rate, raw_rate)
 
-            # nieuw: datum coaching verzamelen
             if kol_date:
                 d_raw = dfc[kol_date].iloc[i]
                 d = pd.to_datetime(d_raw, errors="coerce", dayfirst=True)
                 if pd.notna(d):
                     lst = info.get("coaching_datums", [])
-                    if d.strftime("%d-%m-%Y") not in lst:
-                        lst.append(d.strftime("%d-%m-%Y"))
+                    val = d.strftime("%d-%m-%Y")
+                    if val not in lst:
+                        lst.append(val)
                     info["coaching_datums"] = lst
 
             excel_info[pnr] = info
 
-        # nieuw: compacte DF teruggeven voor session_state
-# ... nadat kol_pnr, kol_date, kol_rate gevonden zijn
-
-            df_small = None
-            if kol_date:
-                df_small = dfc[[kol_pnr, kol_date]].copy()
-                df_small.columns = ["dienstnummer", "Datum coaching"]
-                df_small["dienstnummer"] = (
-                    df_small["dienstnummer"].astype(str).str.extract(r"(\d+)", expand=False).str.strip()
+        # compacte DF voor deze sheet (buiten de loop!)
+        if kol_date:
+            df_small = dfc[[kol_pnr, kol_date]].copy()
+            df_small.columns = ["dienstnummer", "Datum coaching"]
+            df_small["dienstnummer"] = (
+                df_small["dienstnummer"].astype(str)
+                .str.extract(r"(\d+)", expand=False).str.strip()
+            )
+            df_small["Datum coaching"] = pd.to_datetime(
+                df_small["Datum coaching"], errors="coerce", dayfirst=True
+            )
+            # beoordeling toevoegen als die bestaat
+            if kol_rate:
+                map_rate = {
+                    "zeer goed": "zeer goed","goed": "goed","voldoende": "voldoende",
+                    "onvoldoende": "onvoldoende","slecht": "slecht","zeer slecht": "zeer slecht",
+                    "zeergoed": "zeer goed","zeerslecht": "zeer slecht",
+                }
+                df_small["Beoordeling"] = (
+                    dfc[kol_rate].astype(str).str.strip().str.lower().replace(map_rate)
                 )
-                df_small["Datum coaching"] = pd.to_datetime(
-                    df_small["Datum coaching"], errors="coerce", dayfirst=True
-                )
-            
-                # ▼ nieuw: beoordeling per rij normaliseren
-                if kol_rate:
-                    map_rate = {
-                        "zeer goed": "zeer goed",
-                        "goed": "goed",
-                        "voldoende": "voldoende",
-                        "onvoldoende": "onvoldoende",
-                        "slecht": "slecht",
-                        "zeer slecht": "zeer slecht",
-                        "zeergoed": "zeer goed",
-                        "zeerslecht": "zeer slecht",
-                    }
-                    df_small["Beoordeling"] = (
-                        dfc[kol_rate].astype(str).str.strip().str.lower().replace(map_rate)
-                    )
-                else:
-                    df_small["Beoordeling"] = None
-
+            else:
+                df_small["Beoordeling"] = None
 
         return ids, total_rows, df_small
 
+    # — Lees beide sheets
     s_geel  = vind_sheet(xls, "voltooide coachings")
     s_blauw = vind_sheet(xls, "coaching")
 
     if s_geel:
-        ids_geel,  total_geel_rows,  df_voltooide_clean = lees_sheet(s_geel,  "Voltooid")
+        ids_geel,  total_geel_rows,  df_geel  = lees_sheet(s_geel,  "Voltooid")
+        if df_geel is not None:  df_compact_all.append(df_geel)
     if s_blauw:
-        ids_blauw, total_blauw_rows, _                 = lees_sheet(s_blauw, "Coaching")
+        ids_blauw, total_blauw_rows, df_blauw = lees_sheet(s_blauw, "Coaching")
+        if df_blauw is not None: df_compact_all.append(df_blauw)
 
-    # NIEUW: zet de DF in session_state zodat Tab 'Opzoeken' ze kan gebruiken
-    if isinstance(df_voltooide_clean, pd.DataFrame):
-        st.session_state["coachings_df"] = df_voltooide_clean
+    # consolideren naar één DF en in session_state zetten
+    if df_compact_all:
+        df_volledig = (
+            pd.concat(df_compact_all, ignore_index=True)
+              .dropna(subset=["dienstnummer", "Datum coaching"])
+        )
+        # de-dupliceren op pnr + datum
+        df_volledig = (
+            df_volledig.sort_values("Datum coaching")
+                       .drop_duplicates(subset=["dienstnummer","Datum coaching"], keep="first")
+        )
+        st.session_state["coachings_df"] = df_volledig
+    else:
+        st.session_state["coachings_df"] = None
 
-    # normaliseer/unique datums per pnr
+    # datums in excel_info netjes sorteren
     for p, inf in excel_info.items():
-        if "coaching_datums" in inf and isinstance(inf["coaching_datums"], list):
-            # sorteer en dedup
+        if isinstance(inf.get("coaching_datums"), list):
             try:
-                dd = sorted(set(inf["coaching_datums"]),
-                            key=lambda x: pd.to_datetime(x, dayfirst=True, errors="coerce"))
+                inf["coaching_datums"] = sorted(
+                    set(inf["coaching_datums"]),
+                    key=lambda x: pd.to_datetime(x, dayfirst=True, errors="coerce")
+                )
             except Exception:
-                dd = sorted(set(inf["coaching_datums"]))
-            inf["coaching_datums"] = dd
+                inf["coaching_datums"] = sorted(set(inf["coaching_datums"]))
 
     return ids_geel, ids_blauw, total_geel_rows, total_blauw_rows, excel_info, None
-
 
 # =========================
 # LOGIN FLOW (compact)
@@ -538,17 +556,17 @@ def run_dashboard():
             st.rerun()
 
     # Data laden
-    # Data laden
     df, options = load_schade_prepared()
     
-    # ▼ Nieuw: bestands-signatuur als cache-sleutel
+    # ▼ Nieuw: mtime van Coachingslijst als cache-sleutel
     coachings_pad = "Coachingslijst.xlsx"
-    sig = file_sig(coachings_pad)  # gebruikt grootte, mtime en sha256-inhoud
+    mtime = os.path.getmtime(coachings_pad) if os.path.exists(coachings_pad) else None
     
     gecoachte_ids, coaching_ids, total_geel, total_blauw, excel_info, coach_warn = lees_coachingslijst(
         pad=coachings_pad,
-        _v=sig
+        _v=mtime  # verandert wanneer het bestand wijzigt → cache wordt vernieuwd
     )
+
     st.session_state["gecoachte_ids"] = gecoachte_ids    # nieuw: voltooide set bewaren
     st.session_state["coaching_ids"]  = coaching_ids
     st.session_state["excel_info"]    = excel_info
