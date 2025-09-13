@@ -750,63 +750,112 @@ def run_dashboard():
                 st.markdown(f"**{badge}{disp}** — {int(row['aantal'])} schadegevallen")
 
     # ===== Tab 2: Voertuig =====
+    # ===== Tab 2: Voertuig =====
     with voertuig_tab:
         st.subheader("🚘 Schadegevallen per voertuigtype")
-
+    
         if "BusTram_disp" not in df_filtered.columns:
             st.info("Kolom voor voertuigtype niet gevonden.")
         else:
-            counts = df_filtered["BusTram_disp"].value_counts(dropna=False)
+            # Tellingen per voertuigtype
+            counts = (
+                df_filtered["BusTram_disp"]
+                .fillna("onbekend")
+                .value_counts(dropna=False)
+                .sort_values(ascending=False)
+            )
+    
             if counts.empty:
                 st.info("Geen schadegevallen binnen de huidige filters.")
             else:
                 c1, c2 = st.columns(2)
                 c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
                 c2.metric("Totaal schadegevallen", int(len(df_filtered)))
-
-                st.markdown("### 📊 Samenvatting per voertuigtype")
-                sum_df = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
-                st.dataframe(sum_df, use_container_width=True)
-
-            # --- 📈 Grafiek: schades per maand per voertuigtype (jaaroverschrijdend) ---
-        st.markdown("### 📈 Schades per maand per voertuigtype")
-        
-        if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
-            work = df_filtered.copy()
-            if work.empty:
-                st.caption("Geen data binnen de huidige filters.")
-            else:
-                # Maand als tijd-as (eerste dag van de maand)
-                work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
-        
-                # Tellen per maand × voertuigtype
-                monthly = (
-                    work.groupby(["Maand", "BusTram_disp"])
-                        .size()
-                        .rename("Schades")
-                        .reset_index()
-                )
-        
-                # Wide-vorm: kolommen = voertuigtypes
-                pivot = (
-                    monthly.pivot(index="Maand", columns="BusTram_disp", values="Schades")
-                           .sort_index()
-                )
-        
-                # Volledige maandrange zodat ontbrekende maanden als 0 verschijnen
-                full_idx = pd.period_range(
-                    work["Datum"].min().to_period("M"),
-                    work["Datum"].max().to_period("M"),
-                    freq="M"
-                ).to_timestamp()
-                pivot = pivot.reindex(full_idx).fillna(0).astype(int)
-        
-                # Lijngrafiek
-                st.line_chart(pivot, use_container_width=True)
-        else:
-            st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
-
-
+    
+                st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
+    
+                work_all = df_filtered.copy()
+                work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
+    
+                # — Accordeon per voertuigtype
+                for vtype, total in counts.items():
+                    with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
+                        sub = work_all[work_all["BusTram_disp"] == vtype].copy()
+    
+                        kpi1, kpi2, kpi3 = st.columns(3)
+                        with kpi1:
+                            st.metric("Schades", int(len(sub)))
+                        with kpi2:
+                            st.metric("Unieke chauffeurs", int(sub["dienstnummer"].astype(str).nunique()))
+                        with kpi3:
+                            d_min, d_max = sub["Datum"].min(), sub["Datum"].max()
+                            periode = f"{d_min:%d-%m-%Y} – {d_max:%d-%m-%Y}" if pd.notna(d_min) and pd.notna(d_max) else "—"
+                            st.metric("Periode", periode)
+    
+                        st.markdown("**Samenvatting per locatie**")
+                        sum_df = (
+                            sub.groupby("Locatie_disp", dropna=False)
+                               .size()
+                               .sort_values(ascending=False)
+                               .rename("Schades")
+                               .rename_axis("Locatie")
+                               .reset_index()
+                        )
+                        st.dataframe(sum_df.head(25), use_container_width=True)
+    
+                        st.markdown("**Schades per maand**")
+                        monthly = (
+                            sub.groupby("Maand")
+                               .size()
+                               .rename("Schades")
+                               .reset_index()
+                               .sort_values("Maand")
+                        )
+                        if monthly.empty:
+                            st.caption("Geen maanddata binnen de huidige filters.")
+                        else:
+                            full_idx = pd.period_range(
+                                sub["Datum"].min().to_period("M"),
+                                sub["Datum"].max().to_period("M"),
+                                freq="M"
+                            ).to_timestamp()
+                            monthly = (
+                                monthly.set_index("Maand")
+                                       .reindex(full_idx)
+                                       .fillna(0)
+                                       .rename_axis("Maand")
+                                       .reset_index()
+                            )
+                            st.line_chart(monthly.set_index("Maand")["Schades"], use_container_width=True)
+    
+                st.markdown("---")
+                st.markdown("### 📊 Totale samenvatting per voertuigtype")
+                sum_df_total = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
+                st.dataframe(sum_df_total, use_container_width=True)
+    
+                st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
+                if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
+                    work = df_filtered.copy()
+                    work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
+                    monthly_all = (
+                        work.groupby(["Maand", "BusTram_disp"])
+                            .size()
+                            .rename("Schades")
+                            .reset_index()
+                    )
+                    pivot = (
+                        monthly_all.pivot(index="Maand", columns="BusTram_disp", values="Schades")
+                                   .sort_index()
+                    )
+                    full_idx = pd.period_range(
+                        work["Datum"].min().to_period("M"),
+                        work["Datum"].max().to_period("M"),
+                        freq="M"
+                    ).to_timestamp()
+                    pivot = pivot.reindex(full_idx).fillna(0).astype(int)
+                    st.line_chart(pivot, use_container_width=True)
+                else:
+                    st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
 
     # ===== Tab 3: Locatie =====
     with locatie_tab:
@@ -1016,15 +1065,17 @@ def run_dashboard():
                 if heeft_link:
                     res["URL"] = res["Link"].apply(extract_url)
 
-                kol = ["Datum", "Locatie_disp"] + (["URL"] if heeft_link else [])
+                kol = ["Datum", "Locatie_disp", "BusTram_disp"] + (["URL"] if heeft_link else [])
                 column_config = {
                     "Datum": st.column_config.DateColumn("Datum", format="DD-MM-YYYY"),
                     "Locatie_disp": st.column_config.TextColumn("Locatie"),
+                    "BusTram_disp": st.column_config.TextColumn("Voertuigtype"),
                 }
                 if heeft_link:
                     column_config["URL"] = st.column_config.LinkColumn("Link", display_text="openen")
-
+                
                 st.dataframe(res[kol], column_config=column_config, use_container_width=True)
+
 
     # ===== Tab 5: Coaching =====
     with coaching_tab:
