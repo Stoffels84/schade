@@ -347,6 +347,60 @@ def load_schade_prepared(path="schade met macro.xlsm", sheet="BRON", _v=None):
 
     return df_ok, options
 
+# ========= HASTUS-personeelsnummers inlezen =========
+@st.cache_data(show_spinner=False, ttl=3600)
+def load_hastus_pnrs(path="schade met macro.xlsm"):
+    """
+    Leest tabblad 'data hastus' (kolom A) en haalt personeelsnummers op.
+    Retourneert: (set_pnrs_str, series_pnrs_int_of_None)
+    """
+    if not os.path.exists(path):
+        return set(), None
+    try:
+        xls = pd.ExcelFile(path)
+    except Exception:
+        return set(), None
+
+    # sheet naam tolerant zoeken
+    target = None
+    for sh in xls.sheet_names:
+        s = str(sh).strip().lower()
+        if s in {"data hastus", "data_hastus", "hastus", "hastus data"}:
+            target = sh
+            break
+    if target is None:
+        return set(), None
+
+    try:
+        df = pd.read_excel(xls, sheet_name=target, header=None, usecols="A")
+    except Exception:
+        return set(), None
+
+    if df.empty:
+        return set(), None
+
+    # alles naar cijfers; alleen geldige pnr's behouden
+    s = (
+        df.iloc[:, 0]
+          .astype(str)
+          .str.extract(r"(\d+)", expand=False)
+          .dropna()
+          .str.strip()
+    )
+    if s.empty:
+        return set(), None
+
+    # set met string-PNR's + (optioneel) int-series
+    set_pnrs = set(s.tolist())
+    try:
+        series_int = s.astype(int)
+    except Exception:
+        series_int = None
+
+    return set_pnrs, series_int
+
+
+
 
 # ========= Coachingslijst inlezen =========
 @st.cache_data(show_spinner=False)
@@ -622,6 +676,11 @@ def run_dashboard():
 
     # Data laden
     df, options = load_schade_prepared()
+    # ▼ HASTUS-personeelsnummers beschikbaar maken
+    hastus_set, hastus_series_int = load_hastus_pnrs()
+    st.session_state["hastus_pnrs_set"] = hastus_set
+    st.session_state["hastus_pnrs_series_int"] = hastus_series_int
+
     
     # ▼ Nieuw: mtime van Coachingslijst als cache-sleutel
     coachings_pad = "Coachingslijst.xlsx"
@@ -1058,6 +1117,12 @@ def run_dashboard():
                 teamcoach_disp = (ex_info.get(pnr, {}) or {}).get("teamcoach") or "onbekend"
                 naam_raw = naam_disp
                 st.error("❌ Helaas, die chauffeur bestaat nog niet. Probeer opnieuw.")
+
+                # ➕ NIEUW: bestaat het PNR wel in personeelslijst (HASTUS)?
+                hs_set = st.session_state.get("hastus_pnrs_set", set())
+                if hs_set and pnr in hs_set:
+                    st.info("ℹ️ Dit personeelsnummer bestaat in 'data hastus', maar heeft (nog) geen schadegevallen in de selectie.")
+
     
             # 4) Nettere weergavenaam (pnr/leading streepjes weghalen)
             try:
@@ -1325,7 +1390,113 @@ def run_dashboard():
     # ===== Tab 6: Analyse =====
     # ===== Tab 6: Analyse =====
     with analyse_tab:
-        st.subheader("📐 Analyse: lage ↔ hoge personeelsnummers")
+        st.subheader("📐 Analyse personeelsnummers (HASTUS)")
+
+        # ── Bron: HASTUS-serie met personeelsnummers als integers (ingelezen bij start dashboard)
+        hs_series: pd.Series | None = st.session_state.get("hastus_pnrs_series_int")
+
+        # ── Helpers
+        def _pnr_kpis(series_int: pd.Series) -> dict:
+            pnrs = series_int.dropna().astype(int)
+            return {
+                "totaal_uniek": int(pnrs.drop_duplicates().shape[0]),
+                "min": int(pnrs.min()),
+                "max": int(pnrs.max()),
+                "mediaan": int(pnrs.median()),
+            }
+
+        def _pnr_bins_hastus(series_int: pd.Series, bin_size: int = 10000, include_empty_bins: bool = True) -> pd.DataFrame:
+            """
+            Bereken verdeling van unieke personeelsnummers per 'bin_size'.
+            Geeft een nette tabel met kolommen: Range, Aantal PNRs, Lower, Upper.
+            """
+            if series_int is None or series_int.empty:
+                return pd.DataFrame(columns=["Range", "Aantal PNRs", "Lower", "Upper"])
+
+            pnrs_unique = series_int.dropna().astype(int).drop_duplicates().sort_values()
+
+            # Bin-ondergrenzen bepalen per uniek PNR
+            lowers = (pnrs_unique // bin_size) * bin_size
+            counts = lowers.value_counts().sort_index()
+
+            # Optioneel alle intervallen opnemen (ook lege), voor mooie continue weergave
+            if include_empty_bins:
+                low_min = int((pnrs_unique.min() // bin_size) * bin_size)
+                low_max = int((pnrs_unique.max() // bin_size) * bin_size)
+                full_index = pd.Index(range(low_min, low_max + 1, bin_size))
+                counts = counts.reindex(full_index, fill_value=0)
+
+            rows = []
+            for lower, count in counts.items():
+                upper = lower + bin_size - 1
+                rows.append({
+                    "Range": f"{lower:05d} – {upper:05d}",
+                    "Aantal PNRs": int(count),
+                    "Lower": int(lower),
+                    "Upper": int(upper),
+                })
+            return pd.DataFrame(rows)
+
+        # ── UI-instellingen
+        st.markdown("### 🔧 Instellingen")
+        bin_size = st.number_input(
+            "Bin-grootte",
+            min_value=1000,
+            step=1000,
+            value=10000,
+            help="Aantal opeenvolgende personeelsnummers per interval (standaard 10.000).",
+            key="pnr_bin_size"
+        )
+        include_empty = st.checkbox(
+            "Toon lege intervallen",
+            value=True,
+            help="Handig voor een doorlopende verdeling, ook als er geen PNR's in een interval vallen.",
+            key="pnr_bins_include_empty"
+        )
+
+        st.markdown("---")
+
+        # ── Data + KPI’s
+        if hs_series is None or hs_series.empty:
+            st.info("Geen personeelsnummers beschikbaar uit tabblad **data hastus**.")
+        else:
+            kpis = _pnr_kpis(hs_series)
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Totaal unieke PNR’s", f"{kpis['totaal_uniek']}")
+            c2.metric("Laagste PNR", f"{kpis['min']}")
+            c3.metric("Hoogste PNR", f"{kpis['max']}")
+            c4.metric("Mediaan PNR", f"{kpis['mediaan']}")
+
+            st.markdown("### 📊 Verdeling personeelsnummers per interval")
+            df_bins = _pnr_bins_hastus(hs_series, bin_size=bin_size, include_empty_bins=include_empty)
+
+            # Tabel
+            st.dataframe(
+                df_bins[["Range", "Aantal PNRs"]],
+                use_container_width=True
+            )
+
+            # Grafiek
+            st.bar_chart(
+                df_bins.set_index("Range")["Aantal PNRs"],
+                use_container_width=True
+            )
+
+            # Export
+            st.download_button(
+                "⬇️ Download verdeling (CSV)",
+                df_bins[["Range", "Aantal PNRs", "Lower", "Upper"]].to_csv(index=False).encode("utf-8"),
+                file_name=f"pnr_verdeling_per_{bin_size}.csv",
+                mime="text/csv",
+                key="dl_pnr_bins_csv"
+            )
+
+
+
+
+
+    
+                # ===== Tab 6: Analyse =====
     
         # 1) Dataset-keuze
         use_filters = st.checkbox(
@@ -1457,7 +1628,6 @@ def run_dashboard():
             "In het totaalblok kun je optioneel het totaal personeelsbestand instellen en (indien beschikbaar) "
             "de mediaan PNR van alle medewerkers laten tonen."
         )
-
 
 # =========================
 # main
