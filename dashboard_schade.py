@@ -901,35 +901,75 @@ def run_dashboard():
     # ===== Tab 2: Voertuig =====
     with voertuig_tab:
         st.subheader("🚘 Schadegevallen per voertuigtype")
-    
+
         if "BusTram_disp" not in df_filtered.columns:
             st.info("Kolom voor voertuigtype niet gevonden.")
         else:
-            # Tellingen per voertuigtype
+            # Werk op een kopie
+            df_v = df_filtered.copy()
+
+            # Basis schoonmaak: spaties weg en meerdere spaties → 1
+            df_v["BusTram_disp"] = (
+                df_v["BusTram_disp"]
+                .astype("string")
+                .str.strip()
+                .str.replace(r"\s+", " ", regex=True)
+            )
+
+            # Genormaliseerde sleutel voor groepering (alles klein, onbekend opvangen)
+            df_v["Voertuig_clean"] = (
+                df_v["BusTram_disp"]
+                .fillna("onbekend")
+                .str.strip()
+                .str.lower()
+            )
+
+            # Map van 'clean' → 'mooie' displaytekst
+            # (neemt eerste voorkomende BusTram_disp als label)
+            display_map = (
+                df_v[["Voertuig_clean", "BusTram_disp"]]
+                .dropna()
+                .drop_duplicates("Voertuig_clean")
+                .set_index("Voertuig_clean")["BusTram_disp"]
+                .to_dict()
+            )
+
+            def pretty_v(clean: str) -> str:
+                base = str(display_map.get(clean, clean)).strip()
+                if not base:
+                    return "onbekend"
+                if base.lower() == "onbekend":
+                    return "Onbekend"
+                # Eerste letter hoofdletter
+                return base[0].upper() + base[1:]
+
+            # Tellingen per genormaliseerd voertuigtype
             counts = (
-                df_filtered["BusTram_disp"]
+                df_v["Voertuig_clean"]
                 .fillna("onbekend")
                 .value_counts(dropna=False)
                 .sort_values(ascending=False)
             )
-    
+
             if counts.empty:
                 st.info("Geen schadegevallen binnen de huidige filters.")
             else:
+                # KPI's bovenaan
                 c1, c2 = st.columns(2)
                 c1.metric("Unieke voertuigtypes", int(counts.shape[0]))
-                c2.metric("Totaal schadegevallen", int(len(df_filtered)))
-    
+                c2.metric("Totaal schadegevallen", int(len(df_v)))
+
                 st.markdown("### 📦 Overzicht (klik open per voertuigtype)")
-    
-                work_all = df_filtered.copy()
+
+                work_all = df_v.copy()
                 work_all["Maand"] = work_all["Datum"].dt.to_period("M").dt.to_timestamp()
-    
-                # — Accordeon per voertuigtype
-                for vtype, total in counts.items():
-                    with st.expander(f"{vtype} — {int(total)} schades", expanded=False):
-                        sub = work_all[work_all["BusTram_disp"] == vtype].copy()
-    
+
+                # — Accordeon per voertuigtype (gebruik clean sleutel, mooie label in UI)
+                for v_clean, total in counts.items():
+                    label = pretty_v(v_clean)
+                    with st.expander(f"{label} — {int(total)} schades", expanded=False):
+                        sub = work_all[work_all["Voertuig_clean"] == v_clean].copy()
+
                         kpi1, kpi2, kpi3 = st.columns(3)
                         with kpi1:
                             st.metric("Schades", int(len(sub)))
@@ -937,9 +977,13 @@ def run_dashboard():
                             st.metric("Unieke chauffeurs", int(sub["dienstnummer"].astype(str).nunique()))
                         with kpi3:
                             d_min, d_max = sub["Datum"].min(), sub["Datum"].max()
-                            periode = f"{d_min:%d-%m-%Y} – {d_max:%d-%m-%Y}" if pd.notna(d_min) and pd.notna(d_max) else "—"
+                            periode = (
+                                f"{d_min:%d-%m-%Y} – {d_max:%d-%m-%Y}"
+                                if pd.notna(d_min) and pd.notna(d_max)
+                                else "—"
+                            )
                             st.metric("Periode", periode)
-    
+
                         st.markdown("**Samenvatting per locatie**")
                         sum_df = (
                             sub.groupby("Locatie_disp", dropna=False)
@@ -950,7 +994,7 @@ def run_dashboard():
                                .reset_index()
                         )
                         st.dataframe(sum_df.head(25), use_container_width=True)
-    
+
                         st.markdown("**Schades per maand**")
                         monthly = (
                             sub.groupby("Maand")
@@ -974,36 +1018,56 @@ def run_dashboard():
                                        .rename_axis("Maand")
                                        .reset_index()
                             )
-                            st.line_chart(monthly.set_index("Maand")["Schades"], use_container_width=True)
-    
+                            st.line_chart(
+                                monthly.set_index("Maand")["Schades"],
+                                use_container_width=True
+                            )
+
                 st.markdown("---")
                 st.markdown("### 📊 Totale samenvatting per voertuigtype")
-                sum_df_total = counts.rename_axis("Voertuigtype").reset_index(name="Schades")
+
+                sum_df_total = (
+                    counts.rename_axis("Voertuig_clean")
+                          .reset_index(name="Schades")
+                )
+                sum_df_total["Voertuigtype"] = sum_df_total["Voertuig_clean"].map(pretty_v)
+                sum_df_total = sum_df_total[["Voertuigtype", "Schades"]]
+
                 st.dataframe(sum_df_total, use_container_width=True)
-    
+
                 st.markdown("### 📈 Totaal: schades per maand per voertuigtype")
-                if {"Datum", "BusTram_disp"}.issubset(df_filtered.columns):
-                    work = df_filtered.copy()
+
+                if {"Datum", "Voertuig_clean"}.issubset(df_v.columns):
+                    work = df_v.copy()
                     work["Maand"] = work["Datum"].dt.to_period("M").dt.to_timestamp()
                     monthly_all = (
-                        work.groupby(["Maand", "BusTram_disp"])
+                        work.groupby(["Maand", "Voertuig_clean"])
                             .size()
                             .rename("Schades")
                             .reset_index()
                     )
                     pivot = (
-                        monthly_all.pivot(index="Maand", columns="BusTram_disp", values="Schades")
-                                   .sort_index()
+                        monthly_all.pivot(
+                            index="Maand",
+                            columns="Voertuig_clean",
+                            values="Schades"
+                        )
+                        .sort_index()
                     )
+                    # Mooie kolomnamen
+                    pivot.columns = [pretty_v(c) for c in pivot.columns]
+
                     full_idx = pd.period_range(
                         work["Datum"].min().to_period("M"),
                         work["Datum"].max().to_period("M"),
                         freq="M"
                     ).to_timestamp()
                     pivot = pivot.reindex(full_idx).fillna(0).astype(int)
+
                     st.line_chart(pivot, use_container_width=True)
                 else:
-                    st.caption("Kolommen 'Datum' en/of 'BusTram_disp' ontbreken voor de grafiek.")
+                    st.caption("Kolommen 'Datum' en/of 'Voertuig_clean' ontbreken voor de grafiek.")
+
 
 
     # ===== Tab 3: Locatie =====
