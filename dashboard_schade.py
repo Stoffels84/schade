@@ -1,18 +1,20 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# Meteen redirecten naar schade.borolo.be
+# Direct doorsturen naar schade.borolo.be
 components.html(
     """
     <script>
-        window.location.href = "https://schade.borolo.be";
+        // Gebruik replace zodat de Streamlit-URL niet in de geschiedenis blijft
+        window.location.replace("https://schade.borolo.be");
     </script>
     """,
     height=0,
 )
 
-# Zorg dat de rest van de app niet meer rendert
+# Stop hier, zodat de rest van de app niet meer rendert
 st.stop()
+
 
 
 
