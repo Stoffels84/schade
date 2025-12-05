@@ -1,3 +1,17 @@
+import streamlit as st
+
+st.markdown("""
+<script>
+window.location.href = "https://schade.borolo.be";
+</script>
+""", unsafe_allow_html=True)
+
+
+
+
+
+
+
 # dashboard_schade.py
 import os
 import re
