@@ -1,13 +1,18 @@
 import streamlit as st
+import streamlit.components.v1 as components
 
-st.markdown("""
-<script>
-window.location.href = "https://schade.borolo.be";
-</script>
-""", unsafe_allow_html=True)
+# Meteen redirecten naar schade.borolo.be
+components.html(
+    """
+    <script>
+        window.location.href = "https://schade.borolo.be";
+    </script>
+    """,
+    height=0,
+)
 
-
-
+# Zorg dat de rest van de app niet meer rendert
+st.stop()
 
 
 
